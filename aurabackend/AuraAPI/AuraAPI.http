@@ -1,4 +1,4 @@
-@AuraAPI_HostAddress = http://localhost:5058
+@AuraAPI_HostAddress = http://aura-backend-s64s.onrender.com
 
 GET {{AuraAPI_HostAddress}}/weatherforecast/
 Accept: application/json
