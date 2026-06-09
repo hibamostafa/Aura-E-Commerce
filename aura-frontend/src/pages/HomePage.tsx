@@ -33,7 +33,7 @@ function HomePage() {
   useEffect(() => {
     const fetchCatalog = async () => {
       try {
-        const response = await fetch('http://localhost:5058/api/Products');
+        const response = await fetch('http://aura-backend-s64s.onrender.com/api/Products');
         if (response.ok) {
           const data = await response.json();
           const list = Array.isArray(data) ? data : [];

@@ -54,7 +54,7 @@ const cleanImageUrl = (url?: string): string => {
 
 // --- CONTEXT PROVIDER ---
 export const AuraProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const API_BASE = process.env.REACT_APP_API_BASE || 'http://localhost:5058';
+  const API_BASE = process.env.REACT_APP_API_BASE || 'http://aura-backend-s64s.onrender.com';
 
   const [cart, setCart] = useState<Product[]>(() => {
     const saved = localStorage.getItem('aura_cart');

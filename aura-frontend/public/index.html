@@ -2,42 +2,84 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <link rel="icon" href="%PUBLIC_URL%/favicon.ico" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#000000" />
-    <meta
-      name="description"
-      content="Web site created using create-react-app"
-    />
-    <link rel="apple-touch-icon" href="%PUBLIC_URL%/logo192.png" />
-    <!--
-      manifest.json provides metadata used when your web app is installed on a
-      user's mobile device or desktop. See https://developers.google.com/web/fundamentals/web-app-manifest/
-    -->
-    <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
-    <!--
-      Notice the use of %PUBLIC_URL% in the tags above.
-      It will be replaced with the URL of the `public` folder during the build.
-      Only files inside the `public` folder can be referenced from the HTML.
+    <!-- 1. Favicon Configuration (Points directly to your custom A logo) -->
+    <link rel="icon" href="%PUBLIC_URL%/logo.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
+    <meta name="theme-color" content="#fcfcfc" />
 
-      Unlike "/favicon.ico" or "favicon.ico", "%PUBLIC_URL%/favicon.ico" will
-      work correctly both with client-side routing and a non-root public URL.
-      Learn how to configure a non-root public URL by running `npm run build`.
-    -->
-    <title>React App</title>
+    <!-- 2. Advanced SEO & Keyword Optimization -->
+    <title>Aura Boutique | Elegant Apparel & Wardrobe Workspace</title>
+    <meta name="description" content="Discover Aura Boutique - an elegant, hand-curated apparel collection and minimalist wardrobe workspace. Crafted with premium materials for everyday sophistication." />
+    <meta name="keywords" content="Aura Boutique, Aura Studio, luxury clothing, elegant apparel, minimal dresses, curated fashion, Dubai boutique" />
+    <meta name="author" content="Aura Studio" />
+
+    <!-- 3. Safe iOS/Mobile Touch Icon mapping -->
+    <link rel="apple-touch-icon" href="%PUBLIC_URL%/logo.png" />
+    <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
+
+    <!-- 4. Open Graph (OG) Tags for Premium Social Link Previews (iMessage, WhatsApp, Instagram) -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Aura Boutique | Elegant Apparel & Curated Wardrobe" />
+    <meta property="og:description" content="Discover hand-curated collections crafted with premium materials. Shop modern dresses, sets, tops, and bottoms." />
+    <meta property="og:image" content="%PUBLIC_URL%/logo.png" />
+    <meta property="og:url" content="https://aura-e-commerce.onrender.com" />
+    <meta property="og:site_name" content="Aura Boutique" />
+
+    <!-- 5. Twitter Card Meta Tags -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Aura Boutique | Curated Closet" />
+    <meta name="twitter:description" content="Discover hand-curated collections crafted with premium materials." />
+    <meta name="twitter:image" content="%PUBLIC_URL%/logo.png" />
+
+    <!-- 6. Google Fonts Preconnect & Luxury Typography Loading -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;1,300;1,400&family=Montserrat:wght@300;400;500;600&display=swap" rel="stylesheet">
   </head>
   <body>
     <noscript>You need to enable JavaScript to run this app.</noscript>
-    <div id="root"></div>
-    <!--
-      This HTML file is a template.
-      If you open it directly in the browser, you will see an empty page.
-
-      You can add webfonts, meta tags, or analytics to this file.
-      The build step will place the bundled scripts into the <body> tag.
-
-      To begin the development, run `npm start` or `yarn start`.
-      To create a production bundle, use `npm run build` or `yarn build`.
-    -->
+    
+    <div id="root">
+      <!-- 7. Premium, Minimalist Entry Splash Screen (Automatically unmounts when React loads) -->
+      <style>
+        .aura-entry-loader {
+          position: fixed;
+          inset: 0;
+          background-color: #fdfdfd;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          z-index: 9999;
+          font-family: "Cormorant Garamond", "Didot", "Playfair Display", serif;
+          transition: opacity 0.5s ease;
+        }
+        .aura-loader-title {
+          font-size: 32px;
+          font-weight: 300;
+          letter-spacing: 0.25em;
+          color: #5d4037;
+          margin: 0 0 8px 0;
+          text-transform: uppercase;
+          animation: aura-pulse-fade 1.8s infinite ease-in-out;
+        }
+        .aura-loader-sub {
+          font-size: 8px;
+          font-weight: 600;
+          letter-spacing: 0.35em;
+          color: #a39081;
+          text-transform: uppercase;
+          margin: 0;
+        }
+        @keyframes aura-pulse-fade {
+          0%, 100% { opacity: 0.45; }
+          50% { opacity: 1; }
+        }
+      </style>
+      <div class="aura-entry-loader">
+        <h1 class="aura-loader-title">AURA</h1>
+        <p class="aura-loader-sub">Boutique</p>
+      </div>
+    </div>
   </body>
 </html>

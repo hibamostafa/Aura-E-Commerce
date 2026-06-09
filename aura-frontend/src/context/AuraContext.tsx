@@ -38,7 +38,7 @@ interface AuraContextType {
 const AuraContext = createContext<AuraContextType | undefined>(undefined);
 
 // Base endpoint for user authentication and features
-const API_BASE = 'http://localhost:5058/api/Users';
+const API_BASE = 'http://aura-backend-s64s.onrender.com/api/Users';
 
 // --- SAFE LOCALSTORAGE HELPERS ---
 const safeSetItem = (key: string, value: any) => {

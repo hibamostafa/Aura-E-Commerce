@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import toast, { Toaster } from 'react-hot-toast';
 
-const API_URL = "http://localhost:5058/api"; 
+const API_URL = "https://aura-backend-s64s.onrender.com/api"; 
 
 // --- Client-Side Image Compression Helper for Performance ---
 const compressImage = (base64Str: string, maxWidth = 600): Promise<string> => {
@@ -102,6 +102,12 @@ const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({ view }) => {
 };
 
 const App: React.FC = () => {
+  // --- OWNER SECURE AUTHENTICATION STATE ---
+  const [isOwnerAuthenticated, setIsOwnerAuthenticated] = useState(() => {
+    return localStorage.getItem('aura_owner_auth') === 'true';
+  });
+  const [ownerPasscode, setOwnerPasscode] = useState('');
+
   // Navigation State
   const [currentView, setCurrentView] = useState<'OVERVIEW' | 'PRODUCTS' | 'ORDERS' | 'CUSTOMERS'>('OVERVIEW');
   
@@ -148,8 +154,10 @@ const App: React.FC = () => {
   };
 
   useEffect(() => {
-    fetchData();
-  }, []);
+    if (isOwnerAuthenticated) {
+      fetchData();
+    }
+  }, [isOwnerAuthenticated]);
 
   const fetchData = async () => {
     setIsLoading(true);
@@ -207,15 +215,15 @@ const App: React.FC = () => {
     setEditingId(id);
     setFormData({
       Name: p.Name ?? p.name, 
-      Price: (p.Price ?? p.price).toString(), 
+      Price: (p.Price ?? p.price ?? 0).toString(), 
       Category: p.Category ?? p.category,
       Status: p.Status ?? p.status, 
       Colors: p.Colors ?? p.colors ?? '', 
       Sizes: p.Sizes ?? p.sizes ?? '', 
       Description: p.Description ?? p.description ?? '',
       OnSale: Boolean(p.OnSale ?? p.onSale ?? false),
-      OriginalPrice: p.OriginalPrice ? String(p.OriginalPrice) : (p.OriginalCost ? String(p.OriginalCost) : ''),
-      SalePrice: p.SalePrice ? String(p.SalePrice) : (p.Sale ? String(p.Sale) : '')
+      OriginalPrice: p.OriginalPrice ? String(p.OriginalPrice) : (p.OriginalCost ? String(p.OriginalCost) : (p.originalPrice ? String(p.originalPrice) : '')),
+      SalePrice: p.SalePrice ? String(p.SalePrice) : (p.Sale ? String(p.Sale) : (p.salePrice ? String(p.salePrice) : ''))
     });
     const existingImages = p.Images ?? p.images ?? (p.Img ?? p.img ? [p.Img ?? p.img] : []);
     setImagePreviews(Array.isArray(existingImages) ? existingImages : existingImages ? [existingImages] : []);
@@ -257,6 +265,7 @@ const App: React.FC = () => {
 
         toast.success(editingId ? "Item Updated" : "Item Published");
         resetForm();
+        if (!savedItem) fetchData();
       }
     } catch (e) { toast.error("Error saving to cloud."); }
     finally { setIsSubmitting(false); }
@@ -284,6 +293,55 @@ const App: React.FC = () => {
     setFormData({ Name: '', Price: '', Category: 'tops', Status: 'new-in', Colors: '', Sizes: '', Description: '', OnSale: false, OriginalPrice: '', SalePrice: '' });
     setImagePreviews([]);
   };
+
+  // --- RENDERS THE OWNER SECURE LOCK SCREEN IF NOT SIGNED IN ---
+  if (!isOwnerAuthenticated) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-stone-50 p-6" style={{ fontFamily: 'sans-serif' }}>
+        <Toaster position="top-center" />
+        <div className="max-w-sm w-full bg-white border border-stone-200 p-8 rounded-[2rem] text-center shadow-lg">
+          <h1 className="text-2xl font-serif tracking-[0.2em] text-[#5d4037] uppercase leading-none mb-1">AURA</h1>
+          <p className="text-[8px] tracking-[0.3em] uppercase font-bold text-stone-400 mb-8">Management Portal</p>
+          
+          <div className="space-y-4">
+            <input 
+              type="password" 
+              placeholder="Enter Owner Passcode" 
+              value={ownerPasscode}
+              onChange={(e) => setOwnerPasscode(e.target.value)}
+              className="w-full border border-stone-200 p-4 rounded-2xl text-center text-sm outline-none focus:border-[#5d4037]"
+              style={{ width: '100%', padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', textAlign: 'center', marginBottom: '15px', outline: 'none' }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  if (ownerPasscode === "AuraOwner2026") {
+                    setIsOwnerAuthenticated(true);
+                    localStorage.setItem('aura_owner_auth', 'true');
+                  } else {
+                    toast.error("Incorrect passcode");
+                  }
+                }
+              }}
+            />
+            <button 
+              type="button"
+              onClick={() => {
+                if (ownerPasscode === "AuraOwner2026") {
+                  setIsOwnerAuthenticated(true);
+                  localStorage.setItem('aura_owner_auth', 'true');
+                } else {
+                  toast.error("Incorrect passcode");
+                }
+              }}
+              className="w-full bg-[#5d4037] text-white py-4 rounded-2xl text-[10px] font-bold tracking-[0.2em] uppercase hover:bg-black transition-all"
+              style={{ width: '100%', padding: '12px', background: '#5d4037', color: 'white', border: 'none', borderRadius: '12px', cursor: 'pointer', fontWeight: 'bold' }}
+            >
+              Enter Dashboard
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="dashboard-container">
@@ -361,19 +419,22 @@ const App: React.FC = () => {
                           const productImage = Array.isArray(p.Images) ? p.Images[0] : p.Img ?? p.img;
                           const colors = p.Colors ?? p.colors ?? '';
                           const sizes = p.Sizes ?? p.sizes ?? '';
+                          const isOnSale = p.OnSale ?? p.onSale ?? false;
+                          const originalPrice = p.OriginalPrice ?? p.originalPrice ?? p.Price ?? p.price;
+                          const salePrice = p.SalePrice ?? p.salePrice ?? p.Price ?? p.price;
                           return (
                             <tr key={id}>
                               <td><img src={productImage} className="table-thumb" alt="" /></td>
                               <td className="bold">{p.Name ?? p.name}</td>
                               <td className="italic uppercase">{p.Category ?? p.category}</td>
                               <td>
-                                {p.OnSale ? (
+                                {isOnSale ? (
                                   <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                    <span style={{ textDecoration: 'line-through', color: '#888', fontSize: '0.85em' }}>{p.OriginalPrice ?? p.price} </span>
-                                    <span style={{ color: 'var(--aura-red, #d9534f)', fontWeight: 'bold' }}>{p.SalePrice ?? p.price} </span>
+                                    <span style={{ textDecoration: 'line-through', color: '#888', fontSize: '0.85em' }}>{originalPrice} AED</span>
+                                    <span style={{ color: 'var(--aura-red, #d9534f)', fontWeight: 'bold' }}>{salePrice} AED</span>
                                   </div>
                                 ) : (
-                                  <span>{p.Price ?? p.price} </span>
+                                  <span>{p.Price ?? p.price} AED</span>
                                 )}
                               </td>
                               <td>{colors || '-'}</td>
@@ -412,7 +473,7 @@ const App: React.FC = () => {
                           </div>
                           <div className="order-footer">
                              <span className="total-label">Total:</span>
-                             <span className="total-price">{o.TotalAmount ?? o.totalAmount} </span>
+                             <span className="total-price">{o.TotalAmount ?? o.totalAmount} AED</span>
                           </div>
                         </div>
                       );
@@ -509,7 +570,7 @@ const App: React.FC = () => {
                 
                 {/* Standard Price vs Sale Logic */}
                 {!formData.OnSale && (
-                  <input placeholder="Price ()" type="number" value={formData.Price} onChange={e => setFormData({...formData, Price: e.target.value})} required />
+                  <input placeholder="Price (AED)" type="number" value={formData.Price} onChange={e => setFormData({...formData, Price: e.target.value})} required />
                 )}
 
                 <div className="form-row">

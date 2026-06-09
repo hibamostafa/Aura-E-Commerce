@@ -50,7 +50,7 @@ const Navbar: React.FC = () => {
   useEffect(() => {
     const loadSearchCatalog = async () => {
       try {
-        const response = await fetch('http://localhost:5058/api/Products');
+        const response = await fetch('http://aura-backend-s64s.onrender.com/api/Products');
         if (response.ok) {
           const data = await response.json();
           setAllProducts(Array.isArray(data) ? data : []);
@@ -138,7 +138,7 @@ const Navbar: React.FC = () => {
     };
 
     try {
-      const response = await fetch('http://localhost:5058/api/Orders', {
+      const response = await fetch('http://aura-backend-s64s.onrender.com/api/Orders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(orderPayload)
