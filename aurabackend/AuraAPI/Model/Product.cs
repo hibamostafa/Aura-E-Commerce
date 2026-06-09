@@ -11,6 +11,8 @@ namespace AuraAPI.Model
         public string Img { get; set; }
         public string Category { get; set; }
         public string Status { get; set; }
+        public string Sizes { get; set; }
+        public string Colors { get; set; }
 
         // Optional: tracks which users have wishlisted this item
         [JsonIgnore] 

@@ -6,6 +6,7 @@ import {
 // --- TYPES & INTERFACES ---
 export interface Product {
   id: number;
+  Id?: number;
   name: string;
   Price: number; 
   Name: string;  
@@ -36,7 +37,7 @@ interface AuraContextType {
   addToWishlist: (p: Product) => void;
   removeFromWishlist: (id: number) => void;
   addToViewHistory: (p: Product) => void;
-  saveWishlistToProfile: () => void;
+  saveWishlistToProfile: () => Promise<{ success: boolean; message?: string }>;
   register: (fullName: string, email: string, password: string) => Promise<{ success: boolean; message?: string }>;
   login: (email: string, password: string) => Promise<{ success: boolean; message?: string }>;
   logout: () => void;
@@ -53,6 +54,8 @@ const cleanImageUrl = (url?: string): string => {
 
 // --- CONTEXT PROVIDER ---
 export const AuraProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const API_BASE = process.env.REACT_APP_API_BASE || 'http://localhost:5058';
+
   const [cart, setCart] = useState<Product[]>(() => {
     const saved = localStorage.getItem('aura_cart');
     return saved ? JSON.parse(saved) : [];
@@ -84,9 +87,10 @@ export const AuraProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [user?.wishlist]);
 
   const addToCart = (p: Product) => {
-    const existing = cart.find(item => item.id === p.id);
-    if (existing) {
-      updateQuantity(p.id, 1);
+    const id = p.id ?? p.Id;
+    const existing = cart.find(item => (item.id ?? item.Id) === id);
+    if (existing && typeof id === 'number') {
+      updateQuantity(id, 1);
     } else {
       setCart([...cart, { ...p, quantity: 1 }]);
     }
@@ -94,23 +98,63 @@ export const AuraProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const updateQuantity = (id: number, delta: number) => {
     setCart(prev => prev.map(item => 
-      item.id === id ? { ...item, quantity: Math.max(1, (item.quantity || 1) + delta) } : item
+      (item.id || item.Id) === id ? { ...item, quantity: Math.max(1, (item.quantity || 1) + delta) } : item
     ));
   };
 
-  const removeFromCart = (id: number) => setCart(cart.filter(item => item.id !== id));
+  const removeFromCart = (id: number) => setCart(cart.filter(item => (item.id || item.Id) !== id));
   const clearCart = () => setCart([]);
 
-  const addToWishlist = (p: Product) => {
-    const productId = p.id || (p as any).Id;
-    if (!wishlist.find(item => (item.id || (item as any).Id) === productId)) {
-      setWishlist([...wishlist, { ...p, id: productId || (p as any).Id }]);
+  // --- BACKGROUND SYNC HELPER ---
+  const syncWishlistToCloud = async (currentList: Product[]) => {
+    if (!user?.isLoggedIn) return;
+
+    const productIds = currentList
+      .map(item => item.id || item.Id)
+      .filter((id): id is number => typeof id === 'number');
+
+    try {
+      const response = await fetch(`${API_BASE}/api/Users/wishlist`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify({
+          email: user.email,
+          productIds: productIds
+        })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const serverWishlist = data.wishlist || data.Wishlist || [];
+        setUser(prev => prev ? { ...prev, wishlist: serverWishlist } : null);
+      }
+    } catch (e) {
+      console.error('Background wishlist sync failed:', e);
     }
   };
-  const removeFromWishlist = (id: number) => setWishlist(wishlist.filter(item => (item.id || (item as any).Id) !== id));
+
+  // --- WISHLIST ACTIONS WITH INSTANT CLOUD AUTO-SYNC ---
+  const addToWishlist = (p: Product) => {
+    const productId = p.id || p.Id;
+    if (!wishlist.find(item => (item.id || item.Id) === productId)) {
+      const updated = [...wishlist, { ...p, id: productId ?? 0 }];
+      setWishlist(updated);
+      syncWishlistToCloud(updated); // Sync instantly
+    }
+  };
+
+  const removeFromWishlist = (id: number) => {
+    const updated = wishlist.filter(item => (item.id || item.Id) !== id);
+    setWishlist(updated);
+    syncWishlistToCloud(updated); // Sync instantly
+  };
 
   const addToViewHistory = (p: Product) => {
-    const existing = viewHistory.findIndex(item => item.id === p.id);
+    const productId = p.id || p.Id;
+    const existing = viewHistory.findIndex(item => (item.id || item.Id) === productId);
     if (existing >= 0) {
       const updated = [...viewHistory];
       updated.splice(existing, 1);
@@ -121,58 +165,61 @@ export const AuraProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  // --- MANUAL PROFILE CLOUD SYNC ---
   const saveWishlistToProfile = async () => {
-    if (!user) return;
+    if (!user) return { success: false, message: "No active user logged in." };
+    
+    const productIds = wishlist
+      .map(item => item.id || item.Id)
+      .filter((id): id is number => typeof id === 'number');
+
     try {
       const response = await fetch(`${API_BASE}/api/Users/wishlist`, {
-        method: 'POST',
-        mode: 'cors',
-        credentials: 'include',
-        headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: user.email, wishlist, viewHistory })
+        method: 'PUT',
+        headers: { 
+          'Accept': 'application/json', 
+          'Content-Type': 'application/json' 
+        },
+        body: JSON.stringify({ email: user.email, productIds })
       });
+
       if (response.ok) {
-        const updatedUser = { ...user, wishlist, viewHistory };
+        const data = await response.json();
+        const serverWishlist = data.wishlist || data.Wishlist || [];
+        
+        const updatedUser = { ...user, wishlist: serverWishlist, viewHistory };
         setUser(updatedUser);
-        localStorage.setItem('aura_user', JSON.stringify(updatedUser));
+        setWishlist(serverWishlist);
         return { success: true };
       } else {
-        console.error('Failed to save wishlist:', response.status);
-        const updatedUser = { ...user, wishlist, viewHistory };
-        setUser(updatedUser);
-        localStorage.setItem('aura_user', JSON.stringify(updatedUser));
-        return { success: false, message: 'Local save completed, cloud sync failed' };
+        return { success: false, message: 'Cloud sync failed' };
       }
     } catch (e) {
       console.error('Wishlist sync error:', e);
-      const updatedUser = { ...user, wishlist, viewHistory };
-      setUser(updatedUser);
-      localStorage.setItem('aura_user', JSON.stringify(updatedUser));
-      return { success: false, message: 'Saved locally, cloud connection error' };
+      return { success: false, message: 'Cloud connection error' };
     }
   };
-
-  const API_BASE = process.env.REACT_APP_API_BASE || 'http://localhost:5058';
 
   const register = async (fullName: string, email: string, password: string) => {
     try {
       const response = await fetch(`${API_BASE}/api/Users/register`, {
         method: 'POST',
         mode: 'cors',
-        credentials: 'omit',
         headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
         body: JSON.stringify({ FullName: fullName, Email: email, Password: password })
       });
       if (response.ok) {
         const data = await response.json();
+        const serverWishlist = data.wishlist || data.Wishlist || [];
+        
         const loggedUser = {
-          fullName: data.FullName,
-          email: data.Email,
+          fullName: data.fullName || data.FullName || fullName,
+          email: data.email || data.Email || email,
           isLoggedIn: true,
-          wishlist: wishlist.length ? wishlist : data.Wishlist || []
+          wishlist: serverWishlist
         };
         setUser(loggedUser);
-        setWishlist(loggedUser.wishlist || []);
+        setWishlist(serverWishlist);
         return { success: true };
       }
       return { success: false, message: "Registration failed." };
@@ -184,22 +231,24 @@ export const AuraProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const response = await fetch(`${API_BASE}/api/Users/login`, {
         method: 'POST',
         mode: 'cors',
-        credentials: 'omit',
         headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
         body: JSON.stringify({ Email: email, Password: password })
       });
       if (response.ok) {
         const data = await response.json();
+        const serverWishlist = data.wishlist || data.Wishlist || [];
+        const serverHistory = data.viewHistory || data.ViewHistory || [];
+
         const loggedUser = {
-          fullName: data.FullName,
-          email: data.Email,
+          fullName: data.fullName || data.FullName || "Aura Member",
+          email: data.email || data.Email || email,
           isLoggedIn: true,
-          wishlist: wishlist.length ? wishlist : data.Wishlist || [],
-          viewHistory: viewHistory.length ? viewHistory : data.ViewHistory || []
+          wishlist: serverWishlist,
+          viewHistory: serverHistory
         };
         setUser(loggedUser);
-        setWishlist(loggedUser.wishlist || []);
-        setViewHistory(loggedUser.viewHistory || []);
+        setWishlist(serverWishlist);
+        setViewHistory(serverHistory);
         return { success: true };
       }
       return { success: false, message: "Invalid credentials" };
@@ -208,10 +257,12 @@ export const AuraProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const logout = () => {
     setUser(null);
+    setWishlist([]);
+    setViewHistory([]);
     localStorage.removeItem('aura_user');
   };
 
-  const cartTotal = cart.reduce((acc, item) => acc + (item.Price * (item.quantity || 1)), 0);
+  const cartTotal = cart.reduce((acc, item) => acc + ((item.Price || 0) * (item.quantity || 1)), 0);
 
   return (
     <AuraContext.Provider value={{ 
@@ -354,7 +405,7 @@ const ProfilePageContent: React.FC = () => {
                           <h4>
                             <a href={`/product/${itemId}`}>{item.Name || item.name}</a>
                           </h4>
-                          <p className="item-price">{item.Price} AED</p>
+                          <p className="item-price">{item.Price} $</p>
                           
                           <button 
                             type="button" 
@@ -396,7 +447,7 @@ const ProfilePageContent: React.FC = () => {
                           <h4>
                             <a href={`/product/${itemId}`}>{item.Name || item.name}</a>
                           </h4>
-                          <p className="item-price">{item.Price} AED</p>
+                          <p className="item-price">{item.Price} $</p>
                         </div>
                       </div>
                     );

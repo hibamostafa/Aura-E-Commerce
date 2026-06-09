@@ -124,3 +124,4 @@ C:\Users\lenovo\Aura-Ecosystem\aurabackend\AuraAPI\obj\Debug\net10.0\AuraAPI.pdb
 C:\Users\lenovo\Aura-Ecosystem\aurabackend\AuraAPI\obj\Debug\net10.0\AuraAPI.genruntimeconfig.cache
 C:\Users\lenovo\Aura-Ecosystem\aurabackend\AuraAPI\obj\Debug\net10.0\ref\AuraAPI.dll
 C:\Users\lenovo\Aura-Ecosystem\aurabackend\AuraAPI\bin\Debug\net10.0\Resend.dll
+C:\Users\lenovo\Aura-Ecosystem\aurabackend\AuraAPI\obj\Debug\net10.0\AuraAPI.sourcelink.json

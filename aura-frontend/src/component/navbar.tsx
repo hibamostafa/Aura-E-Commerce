@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { 
   Search, ShoppingBag, Heart, Menu, X, User, 
-  ChevronDown, Zap, Minus, Plus, Trash2, ArrowLeft 
+  Zap, Minus, Plus, Trash2, ArrowLeft 
 } from 'lucide-react';
 import { useAura } from '../context/AuraContext';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -16,6 +16,13 @@ const Navbar: React.FC = () => {
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isCheckingOut, setIsCheckingOut] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  // --- INSTANT SEARCH STATE ---
+  const [searchQuery, setSearchQuery] = useState('');
+  const [allProducts, setAllProducts] = useState<any[]>([]);
+  const [filteredProducts, setFilteredProducts] = useState<any[]>([]);
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const searchRef = useRef<HTMLDivElement>(null); // To detect click outside
 
   const totalItemsCount = cart.reduce((acc, item) => acc + (item.quantity || 1), 0);
 
@@ -33,27 +40,81 @@ const Navbar: React.FC = () => {
   const navItems = [
     { name: 'New In', path: '/products/new-in' },
     { name: 'Sales', path: '/products/sales', isSale: true },
+    { name: 'Dresses', path: '/products/dresses' }, 
     { name: 'Tops', path: '/products/tops' },
     { name: 'Bottoms', path: '/products/bottoms' },
     { name: 'Sets', path: '/products/sets' },
   ];
 
-  // --- 1. THE GATEKEEPER LOGIC ---
+  // --- FETCH PRODUCTS ONCE FOR INSTANT SEARCH CACHING ---
+  useEffect(() => {
+    const loadSearchCatalog = async () => {
+      try {
+        const response = await fetch('http://localhost:5058/api/Products');
+        if (response.ok) {
+          const data = await response.json();
+          setAllProducts(Array.isArray(data) ? data : []);
+        }
+      } catch (e) {
+        console.error("Failed to load search catalog:", e);
+      }
+    };
+    loadSearchCatalog();
+  }, []);
+
+  // --- FILTER LOCAL PRODUCTS DYNAMICALLY ---
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      setFilteredProducts([]);
+      return;
+    }
+    const queryLower = searchQuery.toLowerCase();
+    const matches = allProducts.filter(product => 
+      (product.Name || product.name || '').toLowerCase().includes(queryLower) ||
+      (product.Category || product.category || '').toLowerCase().includes(queryLower)
+    );
+    setFilteredProducts(matches.slice(0, 5)); // Limit to top 5 results for clean dropdown UI
+  }, [searchQuery, allProducts]);
+
+  // --- CLICK OUTSIDE TO CLOSE SEARCH DROPDOWN ---
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (searchRef.current && !searchRef.current.contains(event.target as Node)) {
+        setIsSearchFocused(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  // --- SMART SUBMIT: Redirect to first match on Enter ---
+  const handleSearchSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (filteredProducts.length > 0) {
+      const match = filteredProducts[0];
+      navigate(`/product/${match.Id || match.id}`);
+      setIsSearchFocused(false);
+      setSearchQuery('');
+    } else {
+      toast.error("No items found matching that query.", {
+        style: { background: '#5d4037', color: '#fff', fontSize: '11px' }
+      });
+    }
+  };
+
   const handleProceedToCheckout = () => {
     if (!user || !user.isLoggedIn) {
       toast.error("An Aura account is required to place an order.", {
         style: { background: '#5d4037', color: '#fff', fontSize: '12px' }
       });
-      setIsCartOpen(false); // Close the bag
-      navigate('/auth');    // Send to Login/Register
+      setIsCartOpen(false);
+      navigate('/auth');
       return;
     }
     setIsCheckingOut(true);
   };
 
-  // --- 2. FINAL ORDER HANDLER ---
   const handleConfirmOrder = async () => {
-    // Security check again just in case
     if (!user?.isLoggedIn) {
       navigate('/auth');
       return;
@@ -72,7 +133,7 @@ const Navbar: React.FC = () => {
       Phone: checkoutForm.phone,
       Address: `${checkoutForm.address}, ${checkoutForm.city}`,
       TotalAmount: cartTotal,
-      Items: cart.map(item => `${item.quantity}x ${ item.Name}`).join(", "),
+      Items: cart.map(item => `${item.quantity}x ${item.Name || item.Name}`).join(", "),
       Status: "Pending"
     };
 
@@ -116,11 +177,53 @@ const Navbar: React.FC = () => {
             </Link>
           </div>
 
-          <div className="hidden md:flex flex-[2] justify-center">
-            <div className="relative w-full max-w-md group">
-              <input type="text" placeholder="Search for elegant styles..." className="w-full bg-aura-beige/40 border border-aura-nude rounded-full py-2.5 px-10 text-[11px] outline-none focus:border-aura-tan focus:bg-white transition-all text-aura-brown" />
+          {/* Desktop Search Engine & Floating Dropdown */}
+          <div ref={searchRef} className="hidden md:flex flex-[2] justify-center relative">
+            <form onSubmit={handleSearchSubmit} className="relative w-full max-w-md group">
+              <input 
+                type="text" 
+                placeholder="Search for elegant styles..." 
+                value={searchQuery}
+                onFocus={() => setIsSearchFocused(true)}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full bg-aura-beige/40 border border-aura-nude rounded-full py-2.5 px-10 text-[11px] outline-none focus:border-aura-tan focus:bg-white transition-all text-aura-brown" 
+              />
               <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-aura-tan group-focus-within:text-aura-brown" size={14} />
-            </div>
+            </form>
+
+            {/* FLOATING SEARCH DROPDOWN */}
+            <AnimatePresence>
+              {isSearchFocused && searchQuery.trim() && (
+                <motion.div 
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 10 }}
+                  className="absolute left-1/2 -translate-x-1/2 top-full mt-2 w-full max-w-md bg-white border border-aura-nude rounded-2xl shadow-xl z-[80] overflow-hidden p-2"
+                >
+                  {filteredProducts.length > 0 ? (
+                    <div className="flex flex-col gap-1">
+                      {filteredProducts.map(item => (
+                        <Link 
+                          key={item.Id || item.id}
+                          to={`/product/${item.Id || item.id}`}
+                          onClick={() => { setIsSearchFocused(false); setSearchQuery(''); }}
+                          className="flex items-center gap-4 p-2 hover:bg-aura-beige/25 rounded-xl transition-all text-left"
+                        >
+                          <img src={item.Img || item.img} className="w-10 h-14 object-cover rounded-md bg-stone-50" alt="" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[10px] font-bold uppercase tracking-tight text-gray-800 truncate">{item.Name || item.name}</p>
+                            <p className="text-[9px] uppercase tracking-wider text-aura-tan mt-0.5">{item.Category || item.category}</p>
+                            <p className="text-xs font-bold text-aura-brown mt-1">{item.Price}.00 $</p>
+                          </div>
+                        </Link>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="p-6 text-center text-xs text-stone-400 italic">No elegant matches found.</div>
+                  )}
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
 
           <Link to="/" className="md:hidden absolute left-1/2 -translate-x-1/2 text-center">
@@ -140,14 +243,85 @@ const Navbar: React.FC = () => {
           </div>
         </div>
 
+        {/* Desktop category links */}
         <div className="hidden md:flex justify-center gap-10 py-3 bg-aura-beige/20 border-t border-aura-nude/10 text-[9px] tracking-[0.2em] font-bold text-aura-brown uppercase">
-          {navItems.map((item) => (
-            <Link key={item.path} to={item.path} className={`hover:text-aura-tan transition-colors ${item.isSale ? 'text-red-800 font-black' : ''}`}>
+          {navItems.map((item, index) => (
+            <Link key={item.path || index} to={item.path} className={`hover:text-aura-tan transition-colors ${item.isSale ? 'text-red-800 font-black' : ''}`}>
               {item.name}
             </Link>
           ))}
         </div>
       </header>
+
+      {/* Mobile Side Menu & Search */}
+      <AnimatePresence>
+        {isMenuOpen && (
+          <>
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setIsMenuOpen(false)} className="fixed inset-0 bg-black/40 z-[60] backdrop-blur-sm md:hidden" />
+            <motion.div initial={{ x: '-100%' }} animate={{ x: 0 }} exit={{ x: '-100%' }} transition={{ type: 'spring', damping: 25, stiffness: 200 }} className="fixed left-0 top-0 h-full w-full max-w-[300px] bg-white z-[70] shadow-2xl flex flex-col md:hidden">
+              <div className="p-6 border-b flex justify-between items-center bg-aura-beige/10">
+                <Link to="/" onClick={() => setIsMenuOpen(false)}>
+                  <h1 className="text-xl font-serif tracking-[0.2em] text-aura-brown uppercase">AURA</h1>
+                </Link>
+                <button onClick={() => setIsMenuOpen(false)}><X size={20} /></button>
+              </div>
+              <div className="p-6 space-y-6 flex-1 overflow-y-auto">
+                <form onSubmit={handleSearchSubmit} className="relative w-full group">
+                  <input 
+                    type="text" 
+                    placeholder="Search styles..." 
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full bg-aura-beige/40 border border-aura-nude rounded-full py-2.5 px-10 text-xs outline-none focus:border-aura-tan focus:bg-white transition-all text-aura-brown" 
+                  />
+                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-aura-tan" size={14} />
+                </form>
+
+                {/* Inline Mobile Search Match Results */}
+                {searchQuery.trim() && (
+                  <div className="border border-aura-nude/45 rounded-xl p-2 bg-stone-50/50 flex flex-col gap-2">
+                    {filteredProducts.length > 0 ? (
+                      filteredProducts.map(item => (
+                        <Link 
+                          key={item.Id || item.id} 
+                          to={`/product/${item.Id || item.id}`}
+                          onClick={() => { setIsMenuOpen(false); setSearchQuery(''); }}
+                          className="flex items-center gap-3 p-1.5 hover:bg-white rounded-lg transition"
+                        >
+                          <img src={item.Img || item.img} className="w-8 h-11 object-cover rounded bg-stone-100" alt="" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[9px] font-bold uppercase truncate text-stone-800">{item.Name || item.name}</p>
+                            <p className="text-[10px] font-bold text-aura-brown mt-0.5">{item.Price}.00 $</p>
+                          </div>
+                        </Link>
+                      ))
+                    ) : (
+                      <div className="p-3 text-center text-[10px] italic text-stone-400">No matches found.</div>
+                    )}
+                  </div>
+                )}
+
+                <nav className="flex flex-col gap-6 text-xs tracking-widest font-bold text-aura-brown uppercase">
+                  {navItems.map((item, idx) => (
+                    <Link key={item.path || idx} to={item.path} onClick={() => setIsMenuOpen(false)} className={`hover:text-aura-tan transition-colors ${item.isSale ? 'text-red-800 font-black' : ''}`}>
+                      {item.name}
+                    </Link>
+                  ))}
+                  {user?.isLoggedIn ? (
+                    <Link to="/profile" onClick={() => setIsMenuOpen(false)} className="hover:text-aura-tan transition-colors pt-4 border-t border-aura-nude">
+                      My Profile
+                    </Link>
+                  ) : (
+                    <Link to="/auth" onClick={() => setIsMenuOpen(false)} className="hover:text-aura-tan transition-colors pt-4 border-t border-aura-nude">
+                      Sign In / Register
+                    </Link>
+                  )}
+                </nav>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {isCartOpen && (
@@ -169,21 +343,21 @@ const Navbar: React.FC = () => {
                     {cart.length === 0 ? (
                       <div className="py-20 text-center italic text-stone-400 font-serif">Your bag is currently empty.</div>
                     ) : (
-                      cart.map(item => (
-                        <div key={item.id} className="flex gap-4 group animate-in slide-in-from-right-4 duration-300">
-                          <img src={ item.Img} className="w-20 h-28 object-cover rounded-sm bg-stone-50" alt="" />
+                      cart.map((item, index) => (
+                        <div key={item.id || item.Id || index} className="flex gap-4 group animate-in slide-in-from-right-4 duration-300">
+                          <img src={item.Img || item.Img} className="w-20 h-28 object-cover rounded-sm bg-stone-50" alt="" />
                           <div className="flex-1 flex flex-col justify-between py-1">
                              <div className="flex justify-between items-start">
                                 <div>
-                                  <h4 className="text-[10px] font-bold uppercase tracking-tight text-gray-800">{ item.Name}</h4>
-                                  <p className="text-xs font-bold text-aura-brown mt-1">{item.Price }.00 AED</p>
+                                  <h4 className="text-[10px] font-bold uppercase tracking-tight text-gray-800">{item.Name || item.Name}</h4>
+                                  <p className="text-xs font-bold text-aura-brown mt-1">{item.Price || item.Price}.00 $</p>
                                 </div>
-                                <button onClick={() => removeFromCart(item.id)} className="text-gray-300 hover:text-red-800 transition"><Trash2 size={14}/></button>
+                                <button onClick={() => removeFromCart(item.id || item.Id || 0)} className="text-gray-300 hover:text-red-800 transition"><Trash2 size={14}/></button>
                              </div>
                              <div className="flex items-center border border-aura-nude/40 w-fit rounded-full px-2 py-1 gap-4">
-                                <button onClick={() => updateQuantity(item.id, -1)} className="hover:text-aura-tan"><Minus size={10}/></button>
+                                <button onClick={() => updateQuantity(item.id || item.Id || 0, -1)} className="hover:text-aura-tan"><Minus size={10}/></button>
                                 <span className="text-[10px] font-bold w-4 text-center">{item.quantity}</span>
-                                <button onClick={() => updateQuantity(item.id, 1)} className="hover:text-aura-tan"><Plus size={10}/></button>
+                                <button onClick={() => updateQuantity(item.id || item.Id || 0, 1)} className="hover:text-aura-tan"><Plus size={10}/></button>
                              </div>
                           </div>
                         </div>
@@ -229,10 +403,10 @@ const Navbar: React.FC = () => {
                      <>
                         <div className="flex justify-between items-center mb-6">
                            <span className="text-lg font-serif italic text-aura-brown">Bag Total</span>
-                           <span className="text-xl font-bold">{cartTotal}.00 AED</span>
+                           <span className="text-xl font-bold">{cartTotal}.00 $</span>
                         </div>
                         <button 
-                          onClick={handleProceedToCheckout} // REDIRECT IF NOT LOGGED IN
+                          onClick={handleProceedToCheckout}
                           className="w-full bg-black text-white py-5 text-[10px] font-bold tracking-[0.3em] uppercase hover:bg-aura-brown transition-all shadow-xl"
                         >
                           Proceed to Checkout
@@ -242,7 +416,7 @@ const Navbar: React.FC = () => {
                      <div className="space-y-4">
                         <div className="bg-green-50/50 p-4 rounded-xl flex items-center gap-3 border border-green-100">
                            <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-                           <p className="text-[9px] font-bold uppercase tracking-widest text-green-800">Cash on Delivery - Total: {cartTotal} AED</p>
+                           <p className="text-[9px] font-bold uppercase tracking-widest text-green-800">Cash on Delivery - Total: {cartTotal} $</p>
                         </div>
                         <button 
                           onClick={handleConfirmOrder}

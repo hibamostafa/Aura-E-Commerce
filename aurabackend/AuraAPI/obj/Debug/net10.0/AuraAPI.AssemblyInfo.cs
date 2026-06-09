@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("AuraAPI")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+c4240f8f1edad5ecb47024b2335fb17fd7bab13f")]
 [assembly: System.Reflection.AssemblyProductAttribute("AuraAPI")]
 [assembly: System.Reflection.AssemblyTitleAttribute("AuraAPI")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

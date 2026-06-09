@@ -90,13 +90,13 @@ const ProductDetails: React.FC = () => {
           <header>
             <p className="text-[10px] tracking-[0.3em] text-aura-tan font-bold uppercase mb-2">Aura Selection</p>
             <h1 className="text-3xl md:text-4xl font-serif text-gray-900 leading-tight">{product.name}</h1>
-            <p className="text-3xl font-bold mt-6 text-aura-brown">{product.price}.00 AED</p>
+            <p className="text-3xl font-bold mt-6 text-aura-brown">{product.price}.00 $</p>
           </header>
 
           {/* PROMO BANNER */}
           <div className="bg-aura-beige/30 border border-aura-nude p-4 flex justify-between items-center text-xs">
             <p className="text-aura-brown font-medium tracking-wide">
-              Complimentary shipping on orders over 500 AED
+              Complimentary shipping on orders over 500 $
             </p>
             <button className="font-bold border-b border-aura-brown uppercase text-[9px]">Details</button>
           </div>

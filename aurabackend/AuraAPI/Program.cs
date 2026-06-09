@@ -18,16 +18,16 @@ builder.Services.AddControllers()
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
-
-// 4. One Unified CORS Policy
-builder.Services.AddCors(options => {
-    options.AddPolicy("AuraPolicy", policy => {
-        policy.AllowAnyOrigin()
-              .AllowAnyMethod()
-              .AllowAnyHeader();
+// 4. One Unified CORS Policy (Allows both port 3000 and 3001)
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowReactApp", policy =>
+    {
+        policy.WithOrigins("http://localhost:3000", "http://localhost:3001") // Added 3001 here
+              .AllowAnyHeader()
+              .AllowAnyMethod();
     });
 });
-
 var app = builder.Build();
 
 // 5. Enable Swagger
@@ -39,7 +39,7 @@ if (app.Environment.IsDevelopment())
 
 // 6. USE CORS (Must be exactly here: after Routing, before Authorization/Map)
 app.UseRouting();
-app.UseCors("AuraPolicy");
+app.UseCors("AllowReactApp");
 
 app.UseAuthorization();
 app.MapControllers();

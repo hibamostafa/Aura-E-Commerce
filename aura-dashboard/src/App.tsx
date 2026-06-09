@@ -3,11 +3,41 @@ import React, { useEffect, useState, useRef } from 'react';
 import './App.css';
 import { 
   LayoutDashboard, ShoppingBag, Package, Trash2, 
-  Edit, Plus, X, Menu, Upload, Users, Loader2, CheckCircle, Clock
+  Edit, Plus, X, Menu, Upload, Users, Loader2, Clock, RefreshCcw
 } from 'lucide-react';
 import toast, { Toaster } from 'react-hot-toast';
 
 const API_URL = "http://localhost:5058/api"; 
+
+// --- Client-Side Image Compression Helper for Performance ---
+const compressImage = (base64Str: string, maxWidth = 600): Promise<string> => {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.src = base64Str;
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      let width = img.width;
+      let height = img.height;
+
+      // Scale proportionally if wider than maximum threshold
+      if (width > maxWidth) {
+        height = (maxWidth / width) * height;
+        width = maxWidth;
+      }
+
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', 0.7)); // Compress to 70% quality JPEG
+      } else {
+        resolve(base64Str);
+      }
+    };
+    img.onerror = () => resolve(base64Str);
+  });
+};
 
 // --- Modern Skeleton Loader Component ---
 interface SkeletonLoaderProps {
@@ -89,7 +119,8 @@ const App: React.FC = () => {
   // Form State
   const [formData, setFormData] = useState({
     Name: '', Price: '', Category: 'tops', Status: 'new-in', 
-    Colors: '', Sizes: '', Description: ''
+    Colors: '', Sizes: '', Description: '',
+    OnSale: false, OriginalPrice: '', SalePrice: ''
   });
   
   const [imagePreviews, setImagePreviews] = useState<string[]>([]);
@@ -118,7 +149,7 @@ const App: React.FC = () => {
 
   useEffect(() => {
     fetchData();
-  }, [currentView]);
+  }, []);
 
   const fetchData = async () => {
     setIsLoading(true);
@@ -146,26 +177,66 @@ const App: React.FC = () => {
       toast.error("Cloud connection failed.");
       setProducts([]); setOrders([]); setUsers([]);
     } finally {
-      // Small simulated delay can be added here if operations complete instantly and flicker.
       setIsLoading(false);
     }
   };
 
+  const handleImageFiles = async (files: FileList | null) => {
+    if (!files) return;
+    const fileArray = Array.from(files);
+    const compressedImages = await Promise.all(fileArray.map(async (file) => {
+      const reader = new FileReader();
+      return new Promise<string>((resolve) => {
+        reader.onload = async () => {
+          const compressed = await compressImage(reader.result as string);
+          resolve(compressed);
+        };
+        reader.readAsDataURL(file);
+      });
+    }));
+    setImagePreviews(prev => [...prev, ...compressedImages]);
+  };
+
+  const removeImagePreview = (index: number) => {
+    setImagePreviews(prev => prev.filter((_, i) => i !== index));
+  };
+
   // --- Handlers ---
   const handleEdit = (p: any) => {
-    setEditingId(p.Id);
+    const id = p.Id ?? p.id;
+    setEditingId(id);
     setFormData({
-      Name: p.Name, Price: p.Price.toString(), Category: p.Category,
-      Status: p.Status, Colors: p.Colors || '', Sizes: p.Sizes || '', Description: p.Description || ''
+      Name: p.Name ?? p.name, 
+      Price: (p.Price ?? p.price).toString(), 
+      Category: p.Category ?? p.category,
+      Status: p.Status ?? p.status, 
+      Colors: p.Colors ?? p.colors ?? '', 
+      Sizes: p.Sizes ?? p.sizes ?? '', 
+      Description: p.Description ?? p.description ?? '',
+      OnSale: Boolean(p.OnSale ?? p.onSale ?? false),
+      OriginalPrice: p.OriginalPrice ? String(p.OriginalPrice) : (p.OriginalCost ? String(p.OriginalCost) : ''),
+      SalePrice: p.SalePrice ? String(p.SalePrice) : (p.Sale ? String(p.Sale) : '')
     });
-    setImagePreviews([p.Img]); 
+    const existingImages = p.Images ?? p.images ?? (p.Img ?? p.img ? [p.Img ?? p.img] : []);
+    setImagePreviews(Array.isArray(existingImages) ? existingImages : existingImages ? [existingImages] : []);
     setShowForm(true);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
-    const payload = { ...formData, Id: editingId || 0, Price: parseFloat(formData.Price), Img: imagePreviews[0] || '' };
+    
+    // Merge Original and Sale prices into payload
+    const payload = { 
+      ...formData, 
+      Id: editingId || 0, 
+      Price: formData.OnSale ? parseFloat(formData.SalePrice) || parseFloat(formData.Price) : parseFloat(formData.Price), 
+      OriginalPrice: formData.OnSale && formData.OriginalPrice ? parseFloat(formData.OriginalPrice) : null,
+      SalePrice: formData.OnSale && formData.SalePrice ? parseFloat(formData.SalePrice) : null,
+      Img: imagePreviews[0] || '',
+      Images: imagePreviews
+    };
+
     const method = editingId ? 'PUT' : 'POST';
     const url = editingId ? `${API_URL}/Products/${editingId}` : `${API_URL}/Products`;
 
@@ -178,15 +249,14 @@ const App: React.FC = () => {
 
         setProducts(prev => {
           if (editingId) {
-            return prev.map(p => p.Id === editingId ? productToShow : p);
+            return prev.map(p => (p.Id ?? p.id) === editingId ? productToShow : p);
           }
-          const exists = prev.some(p => p.Id === productToShow.Id);
-          return exists ? prev.map(p => p.Id === productToShow.Id ? productToShow : p) : [productToShow, ...prev];
+          const exists = prev.some(p => (p.Id ?? p.id) === productToShow.Id);
+          return exists ? prev.map(p => (p.Id ?? p.id) === productToShow.Id ? productToShow : p) : [productToShow, ...prev];
         });
 
         toast.success(editingId ? "Item Updated" : "Item Published");
         resetForm();
-        if (!savedItem) fetchData();
       }
     } catch (e) { toast.error("Error saving to cloud."); }
     finally { setIsSubmitting(false); }
@@ -197,7 +267,7 @@ const App: React.FC = () => {
       try {
         const res = await fetch(`${API_URL}/Products/${id}`, { method: 'DELETE' });
         if (res.ok) {
-          setProducts(prev => prev.filter(p => p.Id !== id));
+          setProducts(prev => prev.filter(p => (p.Id ?? p.id) !== id));
           toast.success("Item removed");
         } else {
           toast.error("Unable to remove item.");
@@ -211,7 +281,7 @@ const App: React.FC = () => {
   const resetForm = () => {
     setShowForm(false);
     setEditingId(null);
-    setFormData({ Name: '', Price: '', Category: 'tops', Status: 'new-in', Colors: '', Sizes: '', Description: '' });
+    setFormData({ Name: '', Price: '', Category: 'tops', Status: 'new-in', Colors: '', Sizes: '', Description: '', OnSale: false, OriginalPrice: '', SalePrice: '' });
     setImagePreviews([]);
   };
 
@@ -240,9 +310,21 @@ const App: React.FC = () => {
       </aside>
 
       <main className="main-content">
-        <header className="mobile-header">
-           <button onClick={() => setIsSidebarOpen(true)} className="hamburger"><Menu size={24}/></button>
-           <h2 className="aura-title">Aura Studio</h2>
+        <header className="mobile-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+             <button onClick={() => setIsSidebarOpen(true)} className="hamburger"><Menu size={24}/></button>
+             <h2 className="aura-title" style={{ margin: 0 }}>Aura Studio</h2>
+           </div>
+           
+           <button 
+             onClick={fetchData} 
+             disabled={isLoading}
+             className="action-btn" 
+             style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '8px 12px', background: 'var(--aura-tan, #e0d5c1)', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+           >
+             <RefreshCcw size={16} className={isLoading ? "spin" : ""} />
+             <span>{isLoading ? 'Syncing...' : 'Reload Data'}</span>
+           </button>
         </header>
 
         {/* --- DYNAMIC SECTION RENDERING --- */}
@@ -272,20 +354,37 @@ const App: React.FC = () => {
                   </div>
                   <div className="data-table-container shadow-hover">
                     <table>
-                      <thead><tr><th>Preview</th><th>Name</th><th>Category</th><th>Price</th><th>Actions</th></tr></thead>
+                      <thead><tr><th>Preview</th><th>Name</th><th>Category</th><th>Price</th><th>Colors</th><th>Sizes</th><th>Actions</th></tr></thead>
                       <tbody>
-                        {products.map(p => (
-                          <tr key={p.Id}>
-                            <td><img src={p.Img} className="table-thumb" alt="" /></td>
-                            <td className="bold">{p.Name}</td>
-                            <td className="italic uppercase">{p.Category}</td>
-                            <td>{p.Price} AED</td>
-                            <td>
-                              <button className="action-btn edit-btn" onClick={() => handleEdit(p)}><Edit size={14}/></button>
-                              <button className="action-btn delete-btn" onClick={() => deleteItem(p.Id)}><Trash2 size={14}/></button>
-                            </td>
-                          </tr>
-                        ))}
+                        {products.map((p, index) => {
+                          const id = p.Id ?? p.id ?? index;
+                          const productImage = Array.isArray(p.Images) ? p.Images[0] : p.Img ?? p.img;
+                          const colors = p.Colors ?? p.colors ?? '';
+                          const sizes = p.Sizes ?? p.sizes ?? '';
+                          return (
+                            <tr key={id}>
+                              <td><img src={productImage} className="table-thumb" alt="" /></td>
+                              <td className="bold">{p.Name ?? p.name}</td>
+                              <td className="italic uppercase">{p.Category ?? p.category}</td>
+                              <td>
+                                {p.OnSale ? (
+                                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                    <span style={{ textDecoration: 'line-through', color: '#888', fontSize: '0.85em' }}>{p.OriginalPrice ?? p.price} </span>
+                                    <span style={{ color: 'var(--aura-red, #d9534f)', fontWeight: 'bold' }}>{p.SalePrice ?? p.price} </span>
+                                  </div>
+                                ) : (
+                                  <span>{p.Price ?? p.price} </span>
+                                )}
+                              </td>
+                              <td>{colors || '-'}</td>
+                              <td>{sizes || '-'}</td>
+                              <td>
+                                <button className="action-btn edit-btn" onClick={() => handleEdit(p)}><Edit size={14}/></button>
+                                <button className="action-btn delete-btn" onClick={() => deleteItem(id)}><Trash2 size={14}/></button>
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -297,24 +396,27 @@ const App: React.FC = () => {
                 <>
                   <h2 className="section-title">Checkout Requests</h2>
                   <div className="orders-grid">
-                    {orders.length > 0 ? orders.map(o => (
-                      <div key={o.Id} className="order-card shadow-hover">
-                        <div className="order-header">
-                           <div className="status-indicator"><Clock size={12}/> Pending Delivery</div>
-                           <p className="order-date">{new Date().toLocaleDateString()}</p>
+                    {orders.length > 0 ? orders.map((o, index) => {
+                      const id = o.Id ?? o.id ?? index;
+                      return (
+                        <div key={id} className="order-card shadow-hover">
+                          <div className="order-header">
+                             <div className="status-indicator"><Clock size={12}/> Pending Delivery</div>
+                             <p className="order-date">{o.OrderDate ? new Date(o.OrderDate).toLocaleDateString() : new Date().toLocaleDateString()}</p>
+                          </div>
+                          <div className="order-body">
+                             <h4>{o.CustomerName ?? o.customerName}</h4>
+                             <p className="order-phone">{o.Phone ?? o.phone}</p>
+                             <p className="order-address">{o.Address ?? o.address}</p>
+                             <div className="order-items-list">{o.Items ?? o.items}</div>
+                          </div>
+                          <div className="order-footer">
+                             <span className="total-label">Total:</span>
+                             <span className="total-price">{o.TotalAmount ?? o.totalAmount} </span>
+                          </div>
                         </div>
-                        <div className="order-body">
-                           <h4>{o.CustomerName}</h4>
-                           <p className="order-phone">{o.Phone}</p>
-                           <p className="order-address">{o.Address}</p>
-                           <div className="order-items-list">{o.Items}</div>
-                        </div>
-                        <div className="order-footer">
-                           <span className="total-label">Total:</span>
-                           <span className="total-price">{o.TotalAmount} AED</span>
-                        </div>
-                      </div>
-                    )) : <p className="empty-msg italic">No one has checked out yet.</p>}
+                      );
+                    }) : <p className="empty-msg italic">No one has checked out yet.</p>}
                   </div>
                 </>
               )}
@@ -327,13 +429,16 @@ const App: React.FC = () => {
                     <table>
                       <thead><tr><th>Member Name</th><th>Email Address</th><th>Status</th></tr></thead>
                       <tbody>
-                        {users.map(u => (
-                          <tr key={u.Id}>
-                            <td className="bold">{u.FullName || 'Aura Member'}</td>
-                            <td>{u.Email}</td>
-                            <td><span className="badge-member">Verified</span></td>
-                          </tr>
-                        ))}
+                        {users.map((u, index) => {
+                          const id = u.Id ?? u.id ?? index;
+                          return (
+                            <tr key={id}>
+                              <td className="bold">{u.FullName ?? u.fullName ?? 'Aura Member'}</td>
+                              <td>{u.Email ?? u.email}</td>
+                              <td><span className="badge-member">Verified</span></td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -349,24 +454,123 @@ const App: React.FC = () => {
             <div className="modal-card">
               <div className="modal-header">
                 <h3>{editingId ? 'Edit Masterpiece' : 'New Collection'}</h3>
-                <X className="close-x" onClick={resetForm} />
+                <X className="close-x" onClick={resetForm} style={{ cursor: 'pointer' }} />
               </div>
               <form onSubmit={handleSubmit} className="admin-form">
+                
+                {/* File Upload Zone - Emphasizing Multiple Images */}
                 <div className="drop-zone" onClick={() => fileInputRef.current?.click()}>
-                   {imagePreviews[0] ? <img src={imagePreviews[0]} className="form-preview-img" alt="" /> : <><Upload size={24}/><p>Upload Photo</p></>}
-                   <input type="file" hidden ref={fileInputRef} onChange={(e) => {
-                     const reader = new FileReader();
-                     reader.onload = () => setImagePreviews([reader.result as string]);
-                     if(e.target.files) reader.readAsDataURL(e.target.files[0]);
-                   }} />
+                  {imagePreviews.length > 0 ? (
+                    <div className="multi-image-preview">
+                      <img src={imagePreviews[0]} className="form-preview-img" alt="Main Preview" />
+                      {imagePreviews.length > 1 && (
+                        <div className="preview-thumbs">
+                          {imagePreviews.slice(1).map((src, idx) => (
+                            <img key={idx} src={src} className="form-thumb-img" alt={`Thumb ${idx}`} />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div style={{ textAlign: 'center', padding: '20px' }}>
+                      <Upload size={24} style={{ marginBottom: '10px' }}/>
+                      <p style={{ margin: 0, fontWeight: 'bold' }}>Click to Upload Photos</p>
+                      <p style={{ margin: '5px 0 0 0', fontSize: '0.85em', color: '#666' }}>(You can select multiple images)</p>
+                    </div>
+                  )}
+                  <input
+                    type="file"
+                    multiple
+                    hidden
+                    ref={fileInputRef}
+                    onChange={(e) => {
+                      handleImageFiles(e.target.files);
+                      if (e.target) e.target.value = '';
+                    }}
+                  />
                 </div>
-                <input placeholder="Name" value={formData.Name} onChange={e => setFormData({...formData, Name: e.target.value})} required />
-                <input placeholder="Price" type="number" value={formData.Price} onChange={e => setFormData({...formData, Price: e.target.value})} required />
+                
+                {/* Manage Selected Images */}
+                {imagePreviews.length > 0 && (
+                  <div className="preview-list">
+                    {imagePreviews.map((src, index) => (
+                      <div key={index} className="preview-item">
+                        <img src={src} alt={`preview-${index}`} />
+                        <button type="button" className="remove-image-btn" onClick={(e) => { e.stopPropagation(); removeImagePreview(index); }}>
+                          <X size={12}/>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Main Product Info */}
+                <input placeholder="Product Name" value={formData.Name} onChange={e => setFormData({...formData, Name: e.target.value})} required />
+                
+                {/* Standard Price vs Sale Logic */}
+                {!formData.OnSale && (
+                  <input placeholder="Price ()" type="number" value={formData.Price} onChange={e => setFormData({...formData, Price: e.target.value})} required />
+                )}
+
                 <div className="form-row">
-                  <select value={formData.Category} onChange={e => setFormData({...formData, Category: e.target.value})}><option value="tops">Tops</option><option value="bottoms">Bottoms</option><option value="sets">Sets</option></select>
-                  <select value={formData.Status} onChange={e => setFormData({...formData, Status: e.target.value})}><option value="new-in">New In</option><option value="sales">On Sale</option></select>
+                  <select value={formData.Category} onChange={e => setFormData({...formData, Category: e.target.value})}>
+                    <option value="tops">Tops</option>
+                    <option value="bottoms">Bottoms</option>
+                    <option value="sets">Sets</option>
+                    <option value="dresses">Dresses</option>
+                  </select>
+                  <select value={formData.Status} onChange={e => setFormData({...formData, Status: e.target.value})}>
+                    <option value="new-in">New In</option>
+                    <option value="restocked">Restocked</option>
+                    <option value="archived">Archived</option>
+                  </select>
                 </div>
-                <button disabled={isSubmitting} type="submit" className="submit-btn">{isSubmitting ? <Loader2 className="spin"/> : 'PUBLISH'}</button>
+
+                {/* Sale Toggle & Pricing Fields */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: '10px 0', padding: '10px', background: 'rgba(0,0,0,0.02)', borderRadius: '6px' }}>
+                  <input 
+                    type="checkbox" 
+                    id="onSaleToggle" 
+                    checked={formData.OnSale}
+                    onChange={e => setFormData({...formData, OnSale: e.target.checked})}
+                    style={{ cursor: 'pointer', width: 'auto', margin: 0 }}
+                  />
+                  <label htmlFor="onSaleToggle" style={{ cursor: 'pointer', fontWeight: 500, fontSize: '0.95em' }}>Item is on sale</label>
+                </div>
+
+                {formData.OnSale && (
+                  <div className="form-row animate-fade-in" style={{ display: 'flex', gap: '10px' }}>
+                    <div style={{ flex: 1 }}>
+                      <label style={{ fontSize: '0.8em', color: '#666', marginBottom: '4px', display: 'block' }}>Original Price</label>
+                      <input 
+                        placeholder="e.g. 250" 
+                        type="number" 
+                        value={formData.OriginalPrice} 
+                        onChange={e => setFormData({...formData, OriginalPrice: e.target.value})} 
+                        required={formData.OnSale}
+                        style={{ margin: 0 }}
+                      />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <label style={{ fontSize: '0.8em', color: '#666', marginBottom: '4px', display: 'block' }}>Sale Price</label>
+                      <input 
+                        placeholder="e.g. 199" 
+                        type="number" 
+                        value={formData.SalePrice} 
+                        onChange={e => setFormData({...formData, SalePrice: e.target.value})} 
+                        required={formData.OnSale}
+                        style={{ margin: 0 }}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Attributes */}
+                <input placeholder="Colors (comma separated)" value={formData.Colors} onChange={e => setFormData({...formData, Colors: e.target.value})} />
+                <input placeholder="Sizes (comma separated)" value={formData.Sizes} onChange={e => setFormData({...formData, Sizes: e.target.value})} />
+                <textarea placeholder="Product Description" value={formData.Description} onChange={e => setFormData({...formData, Description: e.target.value})} rows={3} />
+                
+                <button disabled={isSubmitting} type="submit" className="submit-btn">{isSubmitting ? <Loader2 className="spin"/> : 'PUBLISH PIECE'}</button>
               </form>
             </div>
           </div>

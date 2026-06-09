@@ -40,6 +40,36 @@ const AuraContext = createContext<AuraContextType | undefined>(undefined);
 // Base endpoint for user authentication and features
 const API_BASE = 'http://localhost:5058/api/Users';
 
+// --- SAFE LOCALSTORAGE HELPERS ---
+const safeSetItem = (key: string, value: any) => {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch (error) {
+    if (error instanceof DOMException && (
+      error.name === 'QuotaExceededError' ||
+      error.name === 'NS_ERROR_DOM_QUOTA_REACHED'
+    )) {
+      console.warn(`[LocalStorage] Space quota exceeded for key "${key}". Clearing non-essential local data...`);
+      // Clean non-essential keys to free up space if needed
+      try {
+        localStorage.removeItem('aura_cart');
+        localStorage.removeItem('aura_wishlist');
+      } catch {}
+    } else {
+      console.error(error);
+    }
+  }
+};
+
+// Helper to strip heavy Base64 image payloads before writing to local storage
+const pruneProductDetails = (products: Product[]): Product[] => {
+  return products.map(item => ({
+    ...item,
+    Img: item.Img?.startsWith('data:image/') ? '' : item.Img,
+    img: (item as any).img?.startsWith('data:image/') ? '' : (item as any).img
+  }));
+};
+
 // Retry helper for transient failures
 const fetchWithRetry = async (url: string, options: RequestInit, maxRetries = 3): Promise<Response> => {
   for (let attempt = 0; attempt < maxRetries; attempt++) {
@@ -72,19 +102,23 @@ export const AuraProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return saved ? JSON.parse(saved) : null;
   });
 
-  // 3. Sync LocalStorage whenever states change
-  useEffect(() => { localStorage.setItem('aura_cart', JSON.stringify(cart)); }, [cart]);
-  useEffect(() => { localStorage.setItem('aura_wishlist', JSON.stringify(wishlist)); }, [wishlist]);
+  // 3. Sync LocalStorage safely by pruning heavy Base64 payloads first
+  useEffect(() => { 
+    safeSetItem('aura_cart', pruneProductDetails(cart)); 
+  }, [cart]);
+
+  useEffect(() => { 
+    safeSetItem('aura_wishlist', pruneProductDetails(wishlist)); 
+  }, [wishlist]);
   
   // Keep auth state in sync with localStorage
   useEffect(() => {
-    if (user) localStorage.setItem('aura_user', JSON.stringify(user));
+    if (user) safeSetItem('aura_user', user);
     else localStorage.removeItem('aura_user');
   }, [user]);
 
-const register = async (fullName: string, email: string, password: string) => {
+  const register = async (fullName: string, email: string, password: string) => {
     try {
-      // Use .NET model property casing when sending registration data
       const payload = { FullName: fullName, Email: email, Password: password };
       const response = await fetch(`${API_BASE}/register`, {
         method: 'POST',
@@ -94,7 +128,6 @@ const register = async (fullName: string, email: string, password: string) => {
         },
         body: JSON.stringify(payload)
       });
-      // ... rest of your code
 
       if (!response.ok) {
         let message = `Registration failed with status ${response.status}.`;
@@ -110,17 +143,17 @@ const register = async (fullName: string, email: string, password: string) => {
       }
 
       const data = await response.json();
-      const serverWishlist = data.Wishlist || data.wishlist || [];
+      const serverWishlist = data.wishlist || data.Wishlist || [];
 
       const loggedUser = {
-        fullName: data.FullName || data.fullName || fullName,
-        email: data.Email || data.email || email,
+        fullName: data.fullName || data.FullName || fullName,
+        email: data.email || data.Email || email,
         isLoggedIn: true,
         wishlist: serverWishlist
       };
 
       setUser(loggedUser);
-      setWishlist(serverWishlist); // Sync context state with server database output
+      setWishlist(serverWishlist); 
       return { success: true };
     } catch (e) {
       console.error('Register exception:', e);
@@ -128,9 +161,8 @@ const register = async (fullName: string, email: string, password: string) => {
     }
   };
 
- const login = async (email: string, password: string) => {
+  const login = async (email: string, password: string) => {
     try {
-      // Use .NET model property casing when sending login data
       const payload = { Email: email, Password: password };
       const response = await fetch(`${API_BASE}/login`, {
         method: 'POST',
@@ -140,7 +172,6 @@ const register = async (fullName: string, email: string, password: string) => {
         },
         body: JSON.stringify(payload)
       });
-      // ... rest of your code
 
       if (!response.ok) {
         let message = "Invalid email or password.";
@@ -155,17 +186,17 @@ const register = async (fullName: string, email: string, password: string) => {
       }
 
       const data = await response.json();
-      const serverWishlist = data.Wishlist || data.wishlist || [];
+      const serverWishlist = data.wishlist || data.Wishlist || [];
 
       const loggedUser = {
-        fullName: data.FullName || data.fullName || "Aura Member",
-        email: data.Email || data.email || email,
+        fullName: data.fullName || data.FullName || "Aura Member",
+        email: data.email || data.Email || email,
         isLoggedIn: true,
         wishlist: serverWishlist
       };
 
       setUser(loggedUser);
-      setWishlist(serverWishlist); // Sync context active state with server database output
+      setWishlist(serverWishlist); 
       return { success: true };
     } catch (e) {
       console.error('Login exception:', e);
@@ -179,13 +210,44 @@ const register = async (fullName: string, email: string, password: string) => {
     localStorage.removeItem('aura_user');
   };
 
-  // --- PERSISTENT USER WISHLIST SYNC ACTION ---
+  // --- PRIVATE BACKGROUND SYNC HELPER ---
+  const syncWishlistToCloud = async (currentList: Product[]) => {
+    if (!user?.isLoggedIn) return;
+
+    const productIds = currentList
+      .map(item => item.Id || item.id)
+      .filter((id): id is number => typeof id === 'number');
+
+    try {
+      const response = await fetchWithRetry(`${API_BASE}/wishlist`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify({
+          email: user.email,
+          productIds: productIds
+        })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const serverWishlist = data.wishlist || data.Wishlist || [];
+        
+        setUser(prev => prev ? { ...prev, wishlist: serverWishlist } : null);
+      }
+    } catch (e) {
+      console.error('Background wishlist sync failed:', e);
+    }
+  };
+
+  // --- PERSISTENT USER WISHLIST SYNC ACTION (MANUAL) ---
   const saveWishlistToProfile = async () => {
     if (!user) {
       return { success: false, message: "You must be signed in to sync your wardrobe profile." };
     }
 
-    // Capture standard id keys (supporting both standard and Pascal Case parameters)
     const productIds = wishlist
       .map(item => item.Id || item.id)
       .filter((id): id is number => typeof id === 'number');
@@ -198,9 +260,8 @@ const register = async (fullName: string, email: string, password: string) => {
           'Accept': 'application/json'
         },
         body: JSON.stringify({
-          Email: user.email,
-          ProductIds: productIds,
-          Wishlist: productIds
+          email: user.email,
+          productIds: productIds
         })
       });
 
@@ -217,7 +278,7 @@ const register = async (fullName: string, email: string, password: string) => {
       }
 
       const data = await response.json();
-      const serverWishlist = data.Wishlist || data.wishlist || [];
+      const serverWishlist = data.wishlist || data.Wishlist || [];
 
       const updatedUser = {
         ...user,
@@ -250,11 +311,25 @@ const register = async (fullName: string, email: string, password: string) => {
   const removeFromCart = (id: number) => setCart(cart.filter(item => (item.Id || item.id) !== id));
   const clearCart = () => setCart([]);
 
+  // --- LOVE / WISHLIST ACTIONS WITH INSTANT BACKGROUND CLOUD SYNC ---
   const addToWishlist = (p: Product) => {
     const id = p.Id || p.id;
-    if (!wishlist.find(item => (item.Id || item.id) === id)) setWishlist([...wishlist, p]);
+    if (wishlist.find(item => (item.Id || item.id) === id)) return;
+
+    const updated = [...wishlist, p];
+    setWishlist(updated);
+    
+    // background sync instantly
+    syncWishlistToCloud(updated);
   };
-  const removeFromWishlist = (id: number) => setWishlist(wishlist.filter(item => (item.Id || item.id) !== id));
+
+  const removeFromWishlist = (id: number) => {
+    const updated = wishlist.filter(item => (item.Id || item.id) !== id);
+    setWishlist(updated);
+
+    // background sync instantly
+    syncWishlistToCloud(updated);
+  };
 
   // Calculate total using PascalCase Price from your .NET Database
   const cartTotal = cart.reduce((acc, item) => acc + ((item.Price || 0) * (item.quantity || 1)), 0);

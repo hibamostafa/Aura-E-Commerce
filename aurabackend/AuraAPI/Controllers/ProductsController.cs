@@ -17,7 +17,8 @@ namespace AuraAPI.Controllers
         }
 
         // 1. GET ALL: api/Products
-        [HttpGet]
+        [HttpGet("")]
+        // Explicit empty route to ensure GET api/Products resolves correctly
         public async Task<ActionResult<IEnumerable<Product>>> GetProducts()
         {
             return await _context.Products.ToListAsync();

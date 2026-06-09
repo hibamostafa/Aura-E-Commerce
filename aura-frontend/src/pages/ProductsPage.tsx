@@ -26,72 +26,24 @@ const ProductsPage: React.FC = () => {
 
   useEffect(() => {
     let isMounted = true;
-    let activeController: AbortController | null = null;
 
     const fetchProducts = async () => {
-      const maxRetries = 3;
-      let attempt = 0;
-      
-      while (attempt < maxRetries) {
-        try {
-          // Try to read from sessionStorage to avoid refetching on route changes/remounts
-          const cacheKey = 'aura_products_cache_v1';
-          const cached = sessionStorage.getItem(cacheKey);
-          if (cached) {
-            const parsed = JSON.parse(cached);
-            // if cache is recent (5 minutes) use it
-            if (parsed?.ts && Date.now() - parsed.ts < 5 * 60 * 1000 && parsed.data) {
-              if (!isMounted) return;
-              setProducts(parsed.data);
-              setLoading(false);
-              return;
-            }
-          }
-
-          activeController = new AbortController();
-          const timeoutId = window.setTimeout(() => activeController?.abort(), 15000);
-          
-          try {
-            const response = await fetch('http://localhost:5058/api/Products', {
-              signal: activeController.signal
-            });
-
-            if (!response.ok) {
-              throw new Error(`Server Error: ${response.status}`);
-            }
-
-            const data = await response.json();
-            if (!isMounted) return;
-            setProducts(data);
-            // store in session cache with timestamp
-            try {
-              sessionStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), data }));
-            } catch (e) {
-              // ignore storage errors
-            }
-            setLoading(false);
-            return;
-          } finally {
-            clearTimeout(timeoutId);
-          }
-        } catch (error: any) {
-          if (!isMounted) return;
-          if (error?.name === 'AbortError') {
-            console.warn('Product fetch request aborted:', error);
-            setLoading(false);
-            toast.error('Product load timed out. Please refresh the page.');
-            return;
-          }
-
-          attempt++;
-          if (attempt >= maxRetries) {
-            console.error("Failed to fetch products after retries:", error);
-            setLoading(false);
-            toast.error("The Aura vault is temporarily closed. Please try again.");
-            return;
-          }
-          await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
+      try {
+        const response = await fetch('http://localhost:5058/api/Products');
+        
+        if (!response.ok) {
+          throw new Error(`Server Error: ${response.status} ${response.statusText}`);
         }
+        
+        const data = await response.json();
+        if (!isMounted) return;
+        setProducts(data);
+        setLoading(false);
+      } catch (error) {
+        if (!isMounted) return;
+        console.error("Failed to fetch products:", error);
+        setLoading(false);
+        toast.error("The Aura vault is temporarily closed. Please try again.");
       }
     };
 
@@ -99,7 +51,6 @@ const ProductsPage: React.FC = () => {
 
     return () => {
       isMounted = false;
-      activeController?.abort();
     };
   }, []);
 
@@ -120,12 +71,11 @@ const ProductsPage: React.FC = () => {
     });
   }, [slug, products, selectedSizes, selectedColors, priceRange]);
 
-  const toggleFilter = (item: string, state: string[], setState: any) => {
-    setState(state.includes(item) ? state.filter(i => i !== item) : [...state, item]);
+  const toggleFilter = (item: string, setState: React.Dispatch<React.SetStateAction<string[]>>) => {
+    setState(prev => prev.includes(item) ? prev.filter(i => i !== item) : [...prev, item]);
   };
 
   const handleWishlistClick = (product: any, isWishlisted: boolean) => {
-    // Prefer context user; fallback to localStorage check
     const isLoggedIn = !!(user && (user as any).isLoggedIn) || !!localStorage.getItem('aura_user') || !!localStorage.getItem('user');
     if (!isLoggedIn) {
       toast.error('Please log in to save wishlist items.');
@@ -140,7 +90,6 @@ const ProductsPage: React.FC = () => {
     } else {
       addToWishlist(product);
       toast.success('Added to your wishlist.');
-      // Persist to profile cloud data for each unique user
       try { saveWishlistToProfile(); } catch (e) { console.error('Failed to save wishlist:', e); }
     }
   };
@@ -183,7 +132,7 @@ const ProductsPage: React.FC = () => {
               <AnimatePresence>
                 {activeDropdown === 'color' && (
                   <>
-                    <div className="fixed inset-0 z-40 md:hidden" onClick={() => setActiveDropdown(null)} />
+                    <div className="fixed inset-0 z-40" onClick={() => setActiveDropdown(null)} />
                     <motion.div 
                       initial={{ opacity: 0, y: 8 }} 
                       animate={{ opacity: 1, y: 0 }} 
@@ -195,7 +144,7 @@ const ProductsPage: React.FC = () => {
                           <input 
                             type="checkbox" 
                             checked={selectedColors.includes(color)} 
-                            onChange={() => toggleFilter(color, selectedColors, setSelectedColors)} 
+                            onChange={() => toggleFilter(color, setSelectedColors)} 
                             className="rounded border-stone-300 text-stone-900 focus:ring-stone-900 h-3.5 w-3.5 accent-stone-800" 
                           />
                           <span>{color}</span>
@@ -217,7 +166,7 @@ const ProductsPage: React.FC = () => {
               <AnimatePresence>
                 {activeDropdown === 'size' && (
                   <>
-                    <div className="fixed inset-0 z-40 md:hidden" onClick={() => setActiveDropdown(null)} />
+                    <div className="fixed inset-0 z-40" onClick={() => setActiveDropdown(null)} />
                     <motion.div 
                       initial={{ opacity: 0, y: 8 }} 
                       animate={{ opacity: 1, y: 0 }} 
@@ -227,7 +176,7 @@ const ProductsPage: React.FC = () => {
                       {FILTER_OPTIONS.sizes.map(size => (
                         <button 
                           key={size} 
-                          onClick={() => toggleFilter(size, selectedSizes, setSelectedSizes)} 
+                          onClick={() => toggleFilter(size, setSelectedSizes)} 
                           className={`py-2 text-[10px] font-bold rounded-md border transition-all ${selectedSizes.includes(size) ? 'bg-stone-950 text-white border-stone-950 shadow-sm' : 'border-stone-100 text-stone-400 bg-stone-50 hover:bg-stone-100 hover:text-stone-800'}`}
                         >
                           {size}
@@ -265,7 +214,7 @@ const ProductsPage: React.FC = () => {
       <main className="max-w-[1600px] mx-auto px-4 md:px-12 py-8 md:py-12">
         <div className={`grid grid-cols-2 ${columns === 4 ? 'lg:grid-cols-4 md:grid-cols-3' : columns === 3 ? 'lg:grid-cols-3 md:grid-cols-2' : 'md:grid-cols-2'} gap-x-4 md:gap-x-8 gap-y-12 md:gap-y-16`}>
           {filteredProducts.map((product) => {
-            const isWishlisted = wishlist.some(w => w.id === product.Id);
+            const isWishlisted = wishlist.some(w => (w.id || w.Id) === product.Id);
             
             return (
               <motion.div layout key={product.Id} className="group flex flex-col h-full bg-white p-3 rounded-2xl shadow-[0_4px_30px_rgba(0,0,0,0.01)] hover:shadow-[0_10px_40px_rgba(0,0,0,0.03)] transition-all duration-500">
@@ -282,11 +231,8 @@ const ProductsPage: React.FC = () => {
 
                   <button 
                     onClick={(e) => { 
-                      e.preventDefault(); e.stopPropagation(); 
-                      // require auth to manage wishlist: if not logged in, go to auth page
-                      const isLoggedIn = !!(user && (user as any).isLoggedIn) || !!localStorage.getItem('aura_user') || !!localStorage.getItem('user');
-                      if (!isLoggedIn) return navigate('/auth');
-                      // delegate to unified handler so toast & persistence behave the same
+                      e.preventDefault(); 
+                      e.stopPropagation(); 
                       handleWishlistClick(product, isWishlisted);
                     }} 
                     className="absolute top-3 right-3 z-20 bg-white/80 backdrop-blur-md p-2.5 rounded-full hover:bg-white transition-all shadow-sm active:scale-90 border border-stone-100/50"
@@ -297,8 +243,8 @@ const ProductsPage: React.FC = () => {
                   <Link to={`/product-details/${product.Id}`} className="block w-full h-full">
                     <img 
                       src={product.Img} 
-                      className="w-full h-full object-cover transition duration-[1200ms] ease-out group-hover:scale-103" 
-                      alt={product.Name} 
+                      className="w-full h-full object-cover transition duration-[1200ms] ease-out group-hover:scale-[1.03]" 
+                      alt={product.Name || "Product"} 
                       loading="lazy"
                     />
                   </Link>
@@ -311,11 +257,10 @@ const ProductsPage: React.FC = () => {
                       {product.Name}
                     </Link>
                     <p className="text-sm md:text-base font-bold text-stone-900">
-                      {product.Price?.toLocaleString()}.00 AED
+                      {typeof product.Price === 'number' ? product.Price.toLocaleString() : '0'}.00 $
                     </p>
                   </div>
 
-                  {/* UNIFIED ALWAYS-VISIBLE BUTTON (Works flawlessly on Desktop & Mobile) */}
                   <button 
                     onClick={(e) => { e.preventDefault(); e.stopPropagation(); addToCart(product); }}
                     className="mt-4 w-full bg-stone-950 hover:bg-stone-800 text-white py-3 text-[10px] font-bold tracking-[0.15em] uppercase rounded-xl transition-all flex items-center justify-center gap-2 active:scale-[0.98] shadow-sm"
