@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Link } from 'react-router-dom';
 
 export interface Product {
@@ -15,35 +15,172 @@ export interface Product {
   status?: string;
 }
 
-// Added 'Dresses' category to match your Navbar routes
 const categories = [
-  { name: 'NEW IN', slug: 'new-in', img: 'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?w=400' },
-  { name: 'SALES', slug: 'sales', img: 'https://images.unsplash.com/photo-1490481651871-ab68de25d43d?w=400' },
-  { name: 'DRESSES', slug: 'dresses', img: 'https://images.unsplash.com/photo-1595777457583-95e059d581b8?w=400' }, 
-  { name: 'TOPS', slug: 'tops', img: 'https://images.unsplash.com/photo-1551163943-3f6a855d1153?w=400' },
-  { name: 'BOTTOMS', slug: 'bottoms', img: 'https://images.unsplash.com/photo-1541099649105-f69ad21f3246?w=400' },
-  { name: 'SETS', slug: 'sets', img: 'https://images.unsplash.com/photo-1594633312681-425c7b97ccd1?w=400' },
+  { name: 'NEW IN', slug: 'new-in', icon: 'bag', colors: 'from-amber-100 to-amber-200' },
+  { name: 'SALES', slug: 'sales', icon: 'tag', colors: 'from-rose-100 to-rose-200' },
+  { name: 'DRESSES', slug: 'dresses', icon: 'dress', colors: 'from-violet-100 to-fuchsia-200' },
+  { name: 'TOPS', slug: 'tops', icon: 'top', colors: 'from-cyan-100 to-sky-200' },
+  { name: 'BOTTOMS', slug: 'bottoms', icon: 'bottoms', colors: 'from-emerald-100 to-lime-200' },
+  { name: 'SETS', slug: 'sets', icon: 'sets', colors: 'from-stone-100 to-yellow-100' },
+];
+
+const categoryIcons: Record<string, React.ReactNode> = {
+  bag: (
+    <svg 
+      xmlns="http://www.w3.org/2000/svg" 
+      viewBox="0 0 24 24" 
+      fill="none" 
+      stroke="currentColor" 
+      strokeWidth="1.2" 
+      strokeLinecap="round" 
+      strokeLinejoin="round" 
+      className="w-7 h-7 md:w-10 md:h-10 text-aura-brown"
+    >
+      <path d="M8 7V4.5c0-1.1.9-2 2-2h4c1.1 0 2 .9 2 2V7" />
+      <path d="M4.5 8C4.2 8 4 8.2 4 8.5l-1 12c-.1.8.6 1.5 1.5 1.5h15c.8 0 1.5-.7 1.5-1.5l-1-12c0-.3-.2-.5-.5-.5h-15Z" />
+      <path d="M3.5 13h17" />
+      <circle cx="12" cy="13" r="1.5" />
+    </svg>
+  ),
+  tag: (
+    <svg 
+      xmlns="http://www.w3.org/2000/svg" 
+      viewBox="0 0 24 24" 
+      fill="none" 
+      stroke="currentColor" 
+      strokeWidth="1.2" 
+      strokeLinecap="round" 
+      strokeLinejoin="round" 
+      className="w-7 h-7 md:w-10 md:h-10 text-aura-brown"
+    >
+      <path d="M12 2.5H6.5a1 1 0 0 0-1 1V9L15 18.5c1 1 2.5 1 3.5 0l2-2c1-1 1-2.5 0-3.5L12 2.5Z" />
+      <circle cx="9" cy="6" r="1" />
+      <path d="M8.5 5.5C7 3 4 3 3 5s-1 5 2 6" />
+    </svg>
+  ),
+  dress: (
+    <svg 
+      xmlns="http://www.w3.org/2000/svg" 
+      viewBox="0 0 24 24" 
+      fill="none" 
+      stroke="currentColor" 
+      strokeWidth="1.2" 
+      strokeLinecap="round" 
+      strokeLinejoin="round" 
+      className="w-7 h-7 md:w-10 md:h-10 text-aura-brown"
+    >
+      <path d="M8 4 L6.5 10 C6.5 11.5 8 12.5 8 12.5 C6 15 5.5 21 5.5 21 H18.5 C18.5 21 18 15 16 12.5 C16 12.5 17.5 11.5 17.5 10 L16 4 C14 5.5 10 5.5 8 4 Z" />
+    </svg>
+  ),
+  top: (
+    <svg 
+      xmlns="http://www.w3.org/2000/svg" 
+      viewBox="0 0 24 24" 
+      fill="none" 
+      stroke="currentColor" 
+      strokeWidth="1.2" 
+      strokeLinecap="round" 
+      strokeLinejoin="round" 
+      className="w-7 h-7 md:w-10 md:h-10 text-aura-brown"
+    >
+      <path d="M6.5 4L12 11l5.5-7" />
+      <path d="M4.5 6c0 2 1 3 1.5 5l1 9h10l1-9c.5-2 1.5-3 1.5-5l-2.5-2" />
+      <path d="M12 11l-3 9" />
+    </svg>
+  ),
+  bottoms: (
+    <svg 
+      xmlns="http://www.w3.org/2000/svg" 
+      viewBox="0 0 24 24" 
+      fill="none" 
+      stroke="currentColor" 
+      strokeWidth="1.2" 
+      strokeLinecap="round" 
+      strokeLinejoin="round" 
+      className="w-7 h-7 md:w-10 md:h-10 text-aura-brown"
+    >
+      <path d="M7.5 3h9" />
+      <path d="M7.5 3L5 21h6l1-10 1 10h6l-2.5-18" />
+      <path d="M7 7h10" />
+    </svg>
+  ),
+  sets: (
+    <svg 
+      xmlns="http://www.w3.org/2000/svg" 
+      viewBox="0 0 24 24" 
+      fill="none" 
+      stroke="currentColor" 
+      strokeWidth="1.2" 
+      strokeLinecap="round" 
+      strokeLinejoin="round" 
+      className="w-7 h-7 md:w-10 md:h-10 text-aura-brown"
+    >
+      <path d="M8.5 4 L7 10 H17 L15.5 4 C14 5.5 10 5.5 8.5 4 Z" />
+      <path d="M8 12 H16 L17.5 21 H14 L12 15 L10 21 H6.5 Z" />
+      <path d="M12 12 V14.5" />
+    </svg>
+  ),
+};
+
+const heroSlides = [
+  {
+    id: "timeless",
+    title: "Timeless Elegance",
+    description: "Wardrobe staples designed to outlast the trends.",
+    image: "https://images.unsplash.com/photo-1490481651871-ab68de25d43d?w=1600",
+    link: "/products/new-in",
+    alt: "Timeless Collection"
+  },
+  {
+    id: "modest",
+    title: "Modest & Modern",
+    description: "Sophisticated silhouettes with refined coverage.",
+    image: "https://images.unsplash.com/photo-1490481651871-ab68de25d43d?w=1600",
+    link: "/products/new-in",
+    alt: "Modest Collection"
+  },
+  {
+    id: "casual",
+    title: "Everyday Casual",
+    description: "Effortless pieces to elevate your daily routine.",
+    image: "https://images.unsplash.com/photo-1490481651871-ab68de25d43d?w=1600",
+    link: "/products/new-in",
+    alt: "Casual Collection"
+  },
+  {
+    id: "trendy",
+    title: "Trending Now",
+    description: "The most coveted styles, curated just for you.",
+    image: "https://images.unsplash.com/photo-1490481651871-ab68de25d43d?w=1600",
+    link: "/products/new-in",
+    alt: "Trending Collection"
+  }
 ];
 
 function HomePage() {
   const [newInProducts, setNewInProducts] = useState<Product[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [currentSlide, setCurrentSlide] = useState(0);
 
-  // Fetch real products from the backend on mount
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentSlide((prevIndex) => (prevIndex + 1) % heroSlides.length);
+    }, 6000);
+    return () => clearInterval(timer);
+  }, []);
+
   useEffect(() => {
     const fetchCatalog = async () => {
       try {
-        const response = await fetch('http://aura-backend-s64s.onrender.com/api/Products');
+        const response = await fetch('https://aura-backend-s64s.onrender.com/api/Products');
         if (response.ok) {
           const data = await response.json();
           const list = Array.isArray(data) ? data : [];
           
-          // Filter products where status is "new-in"
           const filtered = list.filter(p => 
             (p.Status || p.status || '').toLowerCase() === 'new-in'
           );
 
-          // Keep only the first 4 (most recent) items
           setNewInProducts(filtered.slice(0, 4));
         }
       } catch (e) {
@@ -59,45 +196,70 @@ function HomePage() {
     <div className="min-h-screen">
       
       {/* HERO SECTION */}
-      <section className="relative w-full h-[60vh] md:h-[80vh] overflow-hidden bg-aura-nude">
-        <img 
-          src="https://images.unsplash.com/photo-1490481651871-ab68de25d43d?w=1600" 
-          alt="Summer" 
-          className="w-full h-full object-cover mix-blend-multiply opacity-70"
-        />
-        <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-          <motion.h2 
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="text-6xl md:text-[120px] font-serif text-white italic drop-shadow-2xl"
+      <section className="relative w-full h-[60vh] md:h-[80vh] overflow-hidden ">
+        <AnimatePresence mode="popLayout">
+          <motion.div
+            key={currentSlide}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 1.5, ease: "easeInOut" }}
+            className="absolute inset-0 w-full h-full"
           >
-            Summer Dress
-          </motion.h2>
-          <Link to="/products/new-in">
-            <button className="mt-10 border border-white text-white px-12 py-4 tracking-[0.3em] text-xs font-bold hover:bg-white hover:text-aura-brown transition-all duration-500 uppercase">
-              Shop Now
-            </button>
-          </Link>
-        </div>
+            <img 
+              src={heroSlides[currentSlide].image} 
+              alt={heroSlides[currentSlide].alt} 
+              className="w-full h-full object-cover mix-blend-multiply opacity-70"
+            />
+            
+            <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-4">
+              <motion.h2 
+                initial={{ opacity: 0, y: 15 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.3, duration: 1 }}
+                className="text-5xl md:text-[100px] font-serif text-white italic drop-shadow-2xl mb-4"
+              >
+                {heroSlides[currentSlide].title}
+              </motion.h2>
+              
+              <motion.p
+                initial={{ opacity: 0, y: 15 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.6, duration: 1 }}
+                className="text-white/90 text-sm md:text-lg tracking-[0.2em] font-light drop-shadow-md max-w-2xl mb-10 uppercase"
+              >
+                {heroSlides[currentSlide].description}
+              </motion.p>
+
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.9, duration: 1 }}
+              >
+                <Link to={heroSlides[currentSlide].link}>
+                  <button className="border border-white text-white px-12 py-4 tracking-[0.3em] text-xs font-bold hover:bg-white hover:text-aura-brown transition-all duration-500 uppercase">
+                    Shop Now
+                  </button>
+                </Link>
+              </motion.div>
+            </div>
+          </motion.div>
+        </AnimatePresence>
       </section>
 
       {/* CIRCULAR CATEGORIES */}
       <section className="py-16 md:py-24 overflow-hidden px-4">
-        <div className="flex md:justify-center items-start gap-6 md:gap-14 overflow-x-auto no-scrollbar pb-4">
+        <div className="flex justify-start md:justify-center items-start gap-6 md:gap-10 overflow-x-auto no-scrollbar pb-4">
           {categories.map((cat) => (
             <Link to={`/products/${cat.slug}`} key={cat.name} className="flex-shrink-0">
               <motion.div 
-                whileHover={{ y: -8 }}
+                whileHover={{ y: -5 }}
                 className="flex flex-col items-center cursor-pointer group"
               >
-                <div className="w-24 h-24 md:w-48 md:h-48 rounded-full overflow-hidden border border-aura-nude group-hover:border-aura-brown transition-all duration-700 p-1 bg-white shadow-sm">
-                  <img 
-                    src={cat.img} 
-                    alt={cat.name} 
-                    className="w-full h-full object-cover rounded-full grayscale-[20%] group-hover:grayscale-0 transition duration-700" 
-                  />
+                <div className="w-20 h-20 md:w-32 md:h-32 rounded-full flex items-center justify-center border border-aura-nude group-hover:border-aura-brown transition-all duration-700 p-1 bg-white shadow-sm">
+                  {categoryIcons[cat.icon]}
                 </div>
-                <span className="mt-5 text-[10px] md:text-xs font-black tracking-[0.2em] group-hover:text-aura-tan transition-colors uppercase">
+                <span className="mt-4 text-[9px] md:text-[11px] font-bold tracking-[0.25em] text-aura-brown/80 group-hover:text-aura-tan transition-colors uppercase">
                   {cat.name}
                 </span>
               </motion.div>
@@ -116,7 +278,6 @@ function HomePage() {
         </div>
         
         {isLoading ? (
-          // Shimmer Skeleton Loader state
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 md:gap-10">
             {[1, 2, 3, 4].map((i) => (
               <div key={i} className="flex flex-col gap-4 animate-pulse">

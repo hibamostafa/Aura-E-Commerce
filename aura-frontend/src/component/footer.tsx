@@ -44,15 +44,15 @@ const Footer: React.FC = () => {
           <div className="flex flex-col gap-4 text-sm opacity-80 font-light">
             <div className="flex items-center gap-3">
               <Phone size={14} className="text-aura-tan" />
-              <span>+971 50 123 4567</span>
+              <span>+961 71 465 676</span>
             </div>
             <div className="flex items-center gap-3">
               <Mail size={14} className="text-aura-tan" />
-              <span>hello@auraboutique.com</span>
+              <span>auraboutique@gmail.com</span>
             </div>
             <div className="flex items-center gap-3">
               <MapPin size={14} className="text-aura-tan" />
-              <span>Dubai Design District, UAE</span>
+              <span>Beirut, Lebanon</span>
             </div>
           </div>
         </div>

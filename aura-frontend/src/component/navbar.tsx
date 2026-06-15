@@ -9,7 +9,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
 
 const Navbar: React.FC = () => {
-  const { user, cart, removeFromCart, updateQuantity, cartTotal, clearCart } = useAura();
+  const { user, cart, removeFromCart, updateQuantity, cartTotal, clearCart, register } = useAura();
   const navigate = useNavigate();
   
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -22,7 +22,7 @@ const Navbar: React.FC = () => {
   const [allProducts, setAllProducts] = useState<any[]>([]);
   const [filteredProducts, setFilteredProducts] = useState<any[]>([]);
   const [isSearchFocused, setIsSearchFocused] = useState(false);
-  const searchRef = useRef<HTMLDivElement>(null); // To detect click outside
+  const searchRef = useRef<HTMLDivElement>(null);
 
   const totalItemsCount = cart.reduce((acc, item) => acc + (item.quantity || 1), 0);
 
@@ -46,20 +46,71 @@ const Navbar: React.FC = () => {
     { name: 'Sets', path: '/products/sets' },
   ];
 
-  // --- FETCH PRODUCTS ONCE FOR INSTANT SEARCH CACHING ---
+  // --- FETCH PRODUCTS ONCE FOR INSTANT SEARCH CACHING (WITH RETRIES) ---
   useEffect(() => {
-    const loadSearchCatalog = async () => {
+    let isMounted = true;
+
+    const fetchWithRetry = async (url: string, retriesOrOptions: number | RequestInit = 2, maybeOptions?: RequestInit): Promise<any> => {
+      // support calling fetchWithRetry(url, retries), fetchWithRetry(url, options),
+      // or fetchWithRetry(url, retries, options) for recursive calls
+      let retries: number;
+      let options: RequestInit | undefined;
+      if (typeof retriesOrOptions === 'number') {
+        retries = retriesOrOptions;
+        options = maybeOptions;
+      } else {
+        retries = 2;
+        options = retriesOrOptions;
+      }
+
       try {
-        const response = await fetch('http://aura-backend-s64s.onrender.com/api/Products');
-        if (response.ok) {
-          const data = await response.json();
+        const response = await fetch(url, options);
+        if (!response.ok) {
+          throw new Error(`Server Error: ${response.status} ${response.statusText}`);
+        }
+        return await response.json();
+      } catch (err) {
+        if (retries > 0 && isMounted) {
+          await new Promise(resolve => setTimeout(resolve, 300));
+          return fetchWithRetry(url, retries - 1, options);
+        }
+        throw err;
+      }
+    };
+
+    const loadSearchCatalog = async () => {
+      const API_BASE_URL = process.env.REACT_APP_API_URL?.replace(/\/+$/, '') || 'https://aura-backend-s64s.onrender.com/api';
+      const primaryEndpoint = `${API_BASE_URL}/Products`;
+      const proxyEndpoint = '/api/Products';
+      const requestOptions: RequestInit = {
+        method: 'GET',
+        mode: 'cors',
+        headers: { Accept: 'application/json' },
+      };
+
+      const loadFromEndpoint = async (endpoint: string) => {
+        const data = await fetchWithRetry(endpoint, requestOptions);
+        if (isMounted) {
           setAllProducts(Array.isArray(data) ? data : []);
         }
+      };
+
+      try {
+        await loadFromEndpoint(primaryEndpoint);
       } catch (e) {
-        console.error("Failed to load search catalog:", e);
+        console.warn(`Primary product fetch failed. Retrying via local proxy (${primaryEndpoint}).`, e);
+        try {
+          await loadFromEndpoint(proxyEndpoint);
+        } catch (proxyError) {
+          console.error(`Failed to load search catalog after retries (${proxyEndpoint}):`, proxyError);
+        }
       }
     };
     loadSearchCatalog();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   // --- FILTER LOCAL PRODUCTS DYNAMICALLY ---
@@ -73,7 +124,7 @@ const Navbar: React.FC = () => {
       (product.Name || product.name || '').toLowerCase().includes(queryLower) ||
       (product.Category || product.category || '').toLowerCase().includes(queryLower)
     );
-    setFilteredProducts(matches.slice(0, 5)); // Limit to top 5 results for clean dropdown UI
+    setFilteredProducts(matches.slice(0, 5));
   }, [searchQuery, allProducts]);
 
   // --- CLICK OUTSIDE TO CLOSE SEARCH DROPDOWN ---
@@ -87,7 +138,7 @@ const Navbar: React.FC = () => {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // --- SMART SUBMIT: Redirect to first match on Enter ---
+  // --- SMART SUBMIT ---
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (filteredProducts.length > 0) {
@@ -100,6 +151,23 @@ const Navbar: React.FC = () => {
         style: { background: '#5d4037', color: '#fff', fontSize: '11px' }
       });
     }
+  };
+
+  const handleProfileClick = async () => {
+    if (!user || !user.isLoggedIn) {
+      const guestId = Date.now();
+      const guestEmail = `guest${guestId}@aura.guest`;
+      const guestPassword = `Aura${Math.random().toString(36).slice(2, 10)}!`;
+      const result = await register('Aura Guest', guestEmail, guestPassword);
+      if (!result.success) {
+        toast.error(result.message || "Unable to generate a new Aura account.");
+      } else {
+        toast.success("A new Aura account has been created.");
+      }
+      navigate('/auth');
+      return;
+    }
+    navigate('/profile');
   };
 
   const handleProceedToCheckout = () => {
@@ -138,7 +206,7 @@ const Navbar: React.FC = () => {
     };
 
     try {
-      const response = await fetch('http://aura-backend-s64s.onrender.com/api/Orders', {
+      const response = await fetch('https://aura-backend-s64s.onrender.com/api/Orders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(orderPayload)
@@ -177,7 +245,6 @@ const Navbar: React.FC = () => {
             </Link>
           </div>
 
-          {/* Desktop Search Engine & Floating Dropdown */}
           <div ref={searchRef} className="hidden md:flex flex-[2] justify-center relative">
             <form onSubmit={handleSearchSubmit} className="relative w-full max-w-md group">
               <input 
@@ -191,7 +258,6 @@ const Navbar: React.FC = () => {
               <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-aura-tan group-focus-within:text-aura-brown" size={14} />
             </form>
 
-            {/* FLOATING SEARCH DROPDOWN */}
             <AnimatePresence>
               {isSearchFocused && searchQuery.trim() && (
                 <motion.div 
@@ -231,9 +297,9 @@ const Navbar: React.FC = () => {
           </Link>
 
           <div className="flex-1 flex items-center justify-end gap-3 md:gap-6 text-aura-brown">
-            <Link to={user ? "/profile" : "/auth"} className="hidden md:block hover:text-aura-tan transition-colors">
+            <button type="button" onClick={handleProfileClick} className="hidden md:block hover:text-aura-tan transition-colors">
               <User size={20} />
-            </Link>
+            </button>
             <button onClick={() => setIsCartOpen(true)} className="relative hover:text-aura-tan transition-colors">
               <ShoppingBag size={20} />
               <span className="absolute -top-1.5 -right-1.5 bg-aura-brown text-white text-[8px] w-4 h-4 rounded-full flex items-center justify-center font-bold">
@@ -243,7 +309,6 @@ const Navbar: React.FC = () => {
           </div>
         </div>
 
-        {/* Desktop category links */}
         <div className="hidden md:flex justify-center gap-10 py-3 bg-aura-beige/20 border-t border-aura-nude/10 text-[9px] tracking-[0.2em] font-bold text-aura-brown uppercase">
           {navItems.map((item, index) => (
             <Link key={item.path || index} to={item.path} className={`hover:text-aura-tan transition-colors ${item.isSale ? 'text-red-800 font-black' : ''}`}>
@@ -253,7 +318,7 @@ const Navbar: React.FC = () => {
         </div>
       </header>
 
-      {/* Mobile Side Menu & Search */}
+      {/* Mobile Side Menu */}
       <AnimatePresence>
         {isMenuOpen && (
           <>
@@ -277,7 +342,6 @@ const Navbar: React.FC = () => {
                   <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-aura-tan" size={14} />
                 </form>
 
-                {/* Inline Mobile Search Match Results */}
                 {searchQuery.trim() && (
                   <div className="border border-aura-nude/45 rounded-xl p-2 bg-stone-50/50 flex flex-col gap-2">
                     {filteredProducts.length > 0 ? (

@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { ChevronDown, Heart, LayoutGrid, Grid3X3, Grid2X2, ShoppingBag, SlidersHorizontal } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -23,34 +23,145 @@ const ProductsPage: React.FC = () => {
   const [selectedSizes, setSelectedSizes] = useState<string[]>([]);
   const [selectedColors, setSelectedColors] = useState<string[]>([]);
   const [priceRange, setPriceRange] = useState({ min: 0, max: 2000 });
+  const [loadError, setLoadError] = useState<string | null>(null);
+  
+  const isMountedRef = useRef(true);
+  const isLocalhost = typeof window !== 'undefined' && /^localhost(:\d+)?$/.test(window.location.hostname);
+  
+  const API_BASE_URL = process.env.REACT_APP_API_URL || 'https://aura-backend-s64s.onrender.com/api';
+  const PRODUCTS_ENDPOINT = `${API_BASE_URL.replace(/\/+$/, '')}/Products`;
+  const LOCAL_PROXY_PRODUCTS_ENDPOINT = '/api/Products';
+  
+  // Persistent Cache Key for Stale-While-Revalidate
+  const PRODUCTS_CACHE_KEY = 'aura_products_cache_persistent';
 
-  useEffect(() => {
-    let isMounted = true;
+  const loadCachedProducts = (): any[] | null => {
+    try {
+      const raw = localStorage.getItem(PRODUCTS_CACHE_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (!parsed || !Array.isArray(parsed.products)) return null;
+      return parsed.products; // Return cached data immediately
+    } catch {
+      return null;
+    }
+  };
 
-    const fetchProducts = async () => {
+  const saveProductsCache = (data: any[]) => {
+    try {
+      localStorage.setItem(PRODUCTS_CACHE_KEY, JSON.stringify({ timestamp: Date.now(), products: data }));
+    } catch (err) {
+      console.warn('Unable to cache products', err);
+    }
+  };
+
+  // Prefetches product details instantly to browser memory on hover
+  const prefetchProductDetails = (product: any) => {
+    try {
+      const id = product.Id || product.id;
+      sessionStorage.setItem(`aura_product_prefetch_${id}`, JSON.stringify(product));
+    } catch (err) {
+      console.warn('Prefetch failed', err);
+    }
+  };
+
+  const fetchProducts = async (forceReload = false, silent = false) => {
+    if (!silent) {
+      setLoading(true);
+    }
+    setLoadError(null);
+
+    // Stale-While-Revalidate Implementation
+    if (!forceReload) {
+      const cached = loadCachedProducts();
+      if (cached) {
+        setProducts(cached);
+        setLoading(false);
+        // Quietly revalidate data in the background to update UI/Cache
+        fetchProducts(true, true);
+        return;
+      }
+    }
+
+    const fetchWithRetry = async (url: string, retries = 2, delay = 300): Promise<any> => {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 second timeout
+
       try {
-        const response = await fetch('http://aura-backend-s64s.onrender.com/api/Products');
+        const response = await fetch(url, {
+          method: 'GET',
+          mode: 'cors',
+          cache: 'no-store',
+          signal: controller.signal,
+          headers: { 'Accept': 'application/json' }
+        });
+        
+        clearTimeout(timeoutId);
         
         if (!response.ok) {
-          throw new Error(`Server Error: ${response.status} ${response.statusText}`);
+          throw new Error(`Server Error: ${response.status}`);
         }
-        
-        const data = await response.json();
-        if (!isMounted) return;
-        setProducts(data);
-        setLoading(false);
-      } catch (error) {
-        if (!isMounted) return;
-        console.error("Failed to fetch products:", error);
-        setLoading(false);
-        toast.error("The Aura vault is temporarily closed. Please try again.");
+        return await response.json();
+      } catch (fetchErr) {
+        clearTimeout(timeoutId);
+        if (retries > 0 && isMountedRef.current) {
+          await new Promise(resolve => setTimeout(resolve, delay));
+          return fetchWithRetry(url, retries - 1, delay + 300);
+        }
+        throw fetchErr;
       }
     };
 
-    fetchProducts();
+    try {
+      let fetchedData;
+      try {
+        fetchedData = await fetchWithRetry(PRODUCTS_ENDPOINT);
+      } catch (primaryError) {
+        if (!process.env.REACT_APP_API_URL && isLocalhost && PRODUCTS_ENDPOINT !== LOCAL_PROXY_PRODUCTS_ENDPOINT) {
+          fetchedData = await fetchWithRetry(LOCAL_PROXY_PRODUCTS_ENDPOINT);
+        } else {
+          throw primaryError;
+        }
+      }
+
+      if (!isMountedRef.current) return;
+      const productsData = Array.isArray(fetchedData) ? fetchedData : [];
+      
+      setProducts(productsData);
+      saveProductsCache(productsData);
+      setLoadError(null);
+    } catch (error) {
+      if (!isMountedRef.current) return;
+      console.error('Failed to fetch products:', error);
+      
+      // Only display block error state if we have absolutely no cached data to display
+      if (products.length === 0) {
+        setProducts([]);
+        setLoadError('Unable to reach the Aura vault. Try again or check your connection.');
+        toast.error('The Aura vault is temporarily closed. Please try again.');
+      }
+    } finally {
+      if (isMountedRef.current && !silent) {
+        setLoading(false);
+      }
+    }
+  };
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    const cachedProducts = loadCachedProducts();
+
+    if (cachedProducts) {
+      setProducts(cachedProducts);
+      setLoading(false);
+      // Run quiet background update
+      fetchProducts(true, true);
+    } else {
+      fetchProducts();
+    }
 
     return () => {
-      isMounted = false;
+      isMountedRef.current = false;
     };
   }, []);
 
@@ -78,7 +189,7 @@ const ProductsPage: React.FC = () => {
   const handleWishlistClick = (product: any, isWishlisted: boolean) => {
     const isLoggedIn = !!(user && (user as any).isLoggedIn) || !!localStorage.getItem('aura_user') || !!localStorage.getItem('user');
     if (!isLoggedIn) {
-      toast.error('Please log in to save wishlist items.');
+      toast.error('Please log in or create an account to continue.');
       navigate('/auth');
       return;
     }
@@ -92,6 +203,17 @@ const ProductsPage: React.FC = () => {
       toast.success('Added to your wishlist.');
       try { saveWishlistToProfile(); } catch (e) { console.error('Failed to save wishlist:', e); }
     }
+  };
+
+  const handleAddToCart = (product: any) => {
+    const isLoggedIn = !!(user && (user as any).isLoggedIn) || !!localStorage.getItem('aura_user') || !!localStorage.getItem('user');
+    if (!isLoggedIn) {
+      toast.error('Please log in or create an account to add items to your cart.');
+      navigate('/auth');
+      return;
+    }
+
+    addToCart(product);
   };
 
   const clearFilters = () => {
@@ -109,12 +231,24 @@ const ProductsPage: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-[#faf9f6] text-stone-900 selection:bg-stone-200">
-      
+    <div className="min-h-screen bg-[#faf9f6] text-stone-900 selection:bg-stone-200 animate-fade-in">
+      {loadError && (
+        <div className="max-w-[1600px] mx-auto px-4 md:px-12 py-4">
+          <div className="rounded-2xl border border-rose-100 bg-rose-50 text-rose-700 px-4 py-3 mb-4 text-sm flex items-center justify-between gap-3 shadow-sm">
+            <span>{loadError}</span>
+            <button
+              onClick={() => fetchProducts(true)}
+              className="text-rose-700 underline underline-offset-2 font-semibold hover:text-rose-900 transition"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* --- STICKY FILTER BAR --- */}
       <div className="sticky top-[60px] md:top-[90px] z-40 bg-white/80 backdrop-blur-md border-b border-stone-100 px-4 md:px-12 py-4">
         <div className="max-w-[1600px] mx-auto flex items-center justify-between">
-          
           {/* Left: Filters */}
           <div className="flex items-center gap-6 text-[11px] font-semibold tracking-widest uppercase">
             <div className="flex items-center gap-2 text-stone-400 font-medium">
@@ -214,17 +348,31 @@ const ProductsPage: React.FC = () => {
       <main className="max-w-[1600px] mx-auto px-4 md:px-12 py-8 md:py-12">
         <div className={`grid grid-cols-2 ${columns === 4 ? 'lg:grid-cols-4 md:grid-cols-3' : columns === 3 ? 'lg:grid-cols-3 md:grid-cols-2' : 'md:grid-cols-2'} gap-x-4 md:gap-x-8 gap-y-12 md:gap-y-16`}>
           {filteredProducts.map((product) => {
-            const isWishlisted = wishlist.some(w => (w.id || w.Id) === product.Id);
-            
+            const id = product.Id || product.id;
+            const isWishlisted = wishlist.some(w => (w.id || w.Id) === id);
+            const imageSrc = product.Img || product.img;
+            const hasSale = product.Status === 'sales' || product.OnSale || product.onSale;
+            const description = product.Description || product.description || '';
+            const price = typeof product.Price === 'number' ? product.Price : parseFloat(product.Price || '0');
+            const originalPrice = product.OriginalPrice || product.originalPrice;
+
             return (
-              <motion.div layout key={product.Id} className="group flex flex-col h-full bg-white p-3 rounded-2xl shadow-[0_4px_30px_rgba(0,0,0,0.01)] hover:shadow-[0_10px_40px_rgba(0,0,0,0.03)] transition-all duration-500">
-                
+              <motion.div 
+                layout 
+                key={id} 
+                className="group flex flex-col h-full bg-white p-3.5 rounded-2xl border border-stone-100/45 shadow-[0_4px_30px_rgba(0,0,0,0.01)] hover:shadow-[0_12px_40px_rgba(0,0,0,0.03)] hover:-translate-y-0.5 transition-all duration-500"
+              >
                 {/* Image Wrap */}
-                <div className="relative aspect-[3/4] overflow-hidden bg-stone-100 rounded-xl mb-4">
-                  <div className="absolute top-3 left-3 z-20">
-                    {product.Status === 'sales' && (
+                <div className="relative aspect-[3/4] overflow-hidden bg-stone-50 rounded-xl mb-4">
+                  <div className="absolute top-3 left-3 z-20 flex flex-col gap-1.5">
+                    {hasSale && (
                       <span className="text-[8px] tracking-widest font-bold bg-amber-700/90 backdrop-blur-sm text-white px-2.5 py-1 rounded-md uppercase shadow-sm">
                         Sale
+                      </span>
+                    )}
+                    {product.Status === 'new-in' && (
+                      <span className="text-[8px] tracking-widest font-bold bg-stone-950/90 backdrop-blur-sm text-white px-2.5 py-1 rounded-md uppercase shadow-sm">
+                        New In
                       </span>
                     )}
                   </div>
@@ -240,35 +388,68 @@ const ProductsPage: React.FC = () => {
                     <Heart size={14} className={`transition-colors ${isWishlisted ? "fill-rose-500 text-rose-500" : "text-stone-600"}`} />
                   </button>
 
-                  <Link to={`/product-details/${product.Id}`} className="block w-full h-full">
+                  <Link 
+                    to={`/product-details/${id}`} 
+                    className="block w-full h-full"
+                    onMouseEnter={() => prefetchProductDetails(product)} // Instant Prefetch on Hover
+                  >
                     <img 
-                      src={product.Img} 
-                      className="w-full h-full object-cover transition duration-[1200ms] ease-out group-hover:scale-[1.03]" 
+                      src={imageSrc} 
+                      className="w-full h-full object-cover transition duration-300 ease-out group-hover:scale-[1.03]" 
                       alt={product.Name || "Product"} 
-                      loading="lazy"
+                      decoding="async" // High Performance Async Decodes
                     />
                   </Link>
                 </div>
 
                 {/* Product Metadata Details */}
                 <div className="flex-grow flex flex-col justify-between px-1">
-                  <div className="space-y-1">
-                    <Link to={`/product-details/${product.Id}`} className="text-[11px] md:text-xs font-semibold tracking-wider text-stone-500 uppercase hover:text-stone-950 transition-colors line-clamp-1">
-                      {product.Name}
-                    </Link>
-                    <p className="text-sm md:text-base font-bold text-stone-900">
-                      {typeof product.Price === 'number' ? product.Price.toLocaleString() : '0'}.00 $
-                    </p>
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-start gap-3">
+                      <Link 
+                        to={`/product-details/${id}`} 
+                        className="text-[11px] md:text-xs font-bold tracking-wider text-stone-800 uppercase hover:text-stone-950 transition-colors line-clamp-1"
+                        onMouseEnter={() => prefetchProductDetails(product)} // Instant Prefetch on Hover
+                      >
+                        {product.Name}
+                      </Link>
+                      <span className="text-[8px] tracking-widest font-bold text-stone-400 uppercase">
+                        {product.Category}
+                      </span>
+                    </div>
+
+                    {/* Elegant Luxury Description */}
+                    {description && (
+                      <p className="text-[11px] text-stone-400 font-serif italic line-clamp-2 leading-relaxed">
+                        {description}
+                      </p>
+                    )}
+
+                    <div className="flex items-baseline gap-2">
+                      {hasSale && originalPrice ? (
+                        <>
+                          <span className="text-sm md:text-base font-bold text-rose-600">
+                            {price.toLocaleString()}.00 $
+                          </span>
+                          <span className="text-[10px] md:text-xs text-stone-400 line-through">
+                            {originalPrice.toLocaleString()}.00 $
+                          </span>
+                        </>
+                      ) : (
+                        <span className="text-sm md:text-base font-bold text-stone-950">
+                          {price.toLocaleString()}.00 $
+                        </span>
+                      )}
+                    </div>
                   </div>
 
                   <button 
-                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); addToCart(product); }}
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleAddToCart(product); }}
                     className="mt-4 w-full bg-stone-950 hover:bg-stone-800 text-white py-3 text-[10px] font-bold tracking-[0.15em] uppercase rounded-xl transition-all flex items-center justify-center gap-2 active:scale-[0.98] shadow-sm"
                   >
                     <ShoppingBag size={13} /> Add to Bag
                   </button>
                 </div>
-
               </motion.div>
             );
           })}
@@ -277,9 +458,18 @@ const ProductsPage: React.FC = () => {
           {filteredProducts.length === 0 && (
             <div className="col-span-full py-40 flex flex-col items-center justify-center gap-2 text-center">
               <p className="text-stone-300 font-serif italic text-2xl">The collection rests.</p>
-              <p className="text-xs text-stone-400 tracking-wide">No pieces match your selected filter.</p>
-              <button onClick={clearFilters} className="mt-4 text-xs font-semibold uppercase tracking-widest bg-stone-950 text-white px-5 py-2.5 rounded-lg shadow-sm hover:bg-stone-800">
-                View All Pieces
+              <p className="text-xs text-stone-400 tracking-wide">
+                {loadError ? 'Could not load pieces from Aura vault. Please check your connection and retry.' : 'No pieces match your selected filter.'}
+              </p>
+              <button
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (loadError) fetchProducts(true); else clearFilters();
+                }}
+                className="mt-4 text-xs font-semibold uppercase tracking-widest bg-stone-950 text-white px-5 py-2.5 rounded-lg shadow-sm hover:bg-stone-800"
+              >
+                {loadError ? 'Retry Loading' : 'View All Pieces'}
               </button>
             </div>
           )}
