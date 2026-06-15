@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <rect width="100" height="100" rx="20" fill="#fdfdfd"/>
+  <rect x="8" y="8" width="84" height="84" rx="12" fill="none" stroke="#a39081" stroke-width="1.5" opacity="0.5"/>
+  <text x="50" y="55" font-family="Didot, Bodoni MT, Georgia, serif" font-size="50" font-weight="300" fill="#5d4037" text-anchor="middle" dominant-baseline="middle">A</text>
+</svg>
