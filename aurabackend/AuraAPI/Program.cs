@@ -18,12 +18,18 @@ builder.Services.AddControllers()
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
-// 4. One Unified CORS Policy (Allows both port 3000 and 3001)
+
+// 4. Update CORS Policy to include your production Render URL
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowReactApp", policy =>
     {
-        policy.WithOrigins("http://localhost:3000", "http://localhost:3001") // Added 3001 here
+        policy.WithOrigins(
+                "http://localhost:3000", 
+                "http://localhost:3001", 
+                "https://aura-dashboard-9dir.onrender.com", // Added production domain
+                "https://aura-backend-s64s.onrender.com" // API backend domain (Render)
+              ) 
               .AllowAnyHeader()
               .AllowAnyMethod();
     });
@@ -39,6 +45,8 @@ if (app.Environment.IsDevelopment())
 
 // 6. USE CORS (Must be exactly here: after Routing, before Authorization/Map)
 app.UseRouting();
+// Redirect HTTP to HTTPS and ensure CORS works with Render (quic issues often from protocol)
+app.UseHttpsRedirection();
 app.UseCors("AllowReactApp");
 
 app.UseAuthorization();
