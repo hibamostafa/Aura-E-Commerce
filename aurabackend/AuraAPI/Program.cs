@@ -20,15 +20,16 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
 // 4. Update CORS Policy to include your production Render URL
+// 4. Unified CORS Policy (Allows both local development and both production Render URLs)
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowReactApp", policy =>
     {
         policy.WithOrigins(
                 "http://localhost:3000", 
-                "http://localhost:3001", 
-                "https://aura-dashboard-9dir.onrender.com", // Added production domain
-                "https://aura-backend-s64s.onrender.com" // API backend domain (Render)
+                "http://localhost:3001",
+                "https://aurafrontend.onrender.com",       // Your Live Storefront
+                "https://aura-dashboard-9dir.onrender.com" // Your Live Admin Dashboard
               ) 
               .AllowAnyHeader()
               .AllowAnyMethod();
